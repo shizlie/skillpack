@@ -36,17 +36,17 @@ Compiled `.mcpb` bundles fix the format. skillpack adds the commerce.
 
 ## Architecture (v1)
 
-| Layer                        | Stack                                                            |
-| ---------------------------- | ---------------------------------------------------------------- |
-| Vendor CLI                   | Bun + TypeScript                                                 |
-| Embedded runtime             | Bun                                                              |
-| Signing                      | Ed25519 via `@noble/ed25519`                                     |
-| Licensing                    | Lease-based: 30d TTL, 72h grace. Not instant revoke.             |
-| Metering                     | HMAC-chained append-only log, key rotates per lease refresh      |
-| License server (hosted)      | Hono on Cloudflare Workers + D1                                  |
-| License server (self-hosted) | Docker + SQLite. Mandatory v1 deliverable for air-gapped buyers. |
-| Vendor dashboard             | Undecied                                                         |
-| Demo skill                   | One legal contract review skill. No second demo in v1.           |
+| Layer                        | Stack                                                              |
+| ---------------------------- | ------------------------------------------------------------------ |
+| Vendor CLI                   | Bun + TypeScript                                                   |
+| Embedded runtime             | Node + `better-sqlite3` (Claude Desktop hosts MCPB via Node)       |
+| Signing                      | Ed25519 via `@noble/ed25519`                                       |
+| Licensing                    | Lease-based: 30d TTL, 72h grace. Not instant revoke.               |
+| Metering                     | HMAC-chained append-only log, key rotates per lease refresh        |
+| License server (hosted)      | Hono on Cloudflare Workers + D1                                    |
+| License server (self-hosted) | Docker + SQLite. Mandatory v1 deliverable for air-gapped buyers.   |
+| Vendor dashboard             | Deferred to post-LOI. v1 ships `skillpack license` CLI + REST API. |
+| Demo skill                   | One legal contract review skill. No second demo in v1.             |
 
 Full design: `~/.gstack/projects/hcproduct-verticalAI/baoharryngo-master-design-20260418-233940.md`
 
