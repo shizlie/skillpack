@@ -1,5 +1,7 @@
 # skillpack — Project Guide for Claude
 
+NOTE: Provide concise, focused responses. Skip non-essential context, and keep examples minimal. Use /cavemen, and assume the readers are stupid.
+
 ## What this is
 
 skillpack is an open-source SDK + commerce layer that turns AI skills into **signed, license-gated, offline-metered binaries** for vertical AI vendors selling into regulated on-prem environments (healthcare, legal, finance, defense). Vendors bring the skill; skillpack handles signing, licensing, usage metering, and a vendor dashboard.

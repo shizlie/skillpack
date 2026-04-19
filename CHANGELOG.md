@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [0.2.0.0] - 2026-04-19
+
+### Added
+
+- Added `packages/runtime/src/server.mjs` — self-contained MCP stdio server that extracts the `.mcpb` bundle, verifies the Ed25519 lease token, serves wiki knowledge via `wiki_search` and `wiki_read_page` tools, and writes HMAC-chained meter events per call.
+- Added `scripts/bundle-laws-consultant.mjs` — one-command vendor build script: generates or reuses Ed25519 keypair, issues a dev lease, stages bundle content, signs with `@skillpack/cli`, produces release folder and transfer tarball with `.sha256` sidecar.
+- Added `scripts/test-receiver-e2e.sh` — automated receiver-side E2E suite covering happy path, key pinning, 4 tamper tests, tarball sidecar integrity, and optional Docker fresh-machine test.
+- Added `docs/runbooks/receiver-verify-install.md` — full 6-step receiver guide: rebuild, local simulation, key pinning, Docker, tamper tests, MCP config, and Claude Code verification.
+- Added `verticals/laws-consultant/SKILL.md` — laws-consultant skill guide for Claude Code with PDPA/CMA wiki grounding instructions.
+- Added `graph-rag/` — Obsidian-style wiki graph query utility (moved from repo root to subdirectory).
+- Added `bun run bundle:laws-consultant` and `bun run test:receiver-e2e` package scripts.
+
+### Changed
+
+- Moved `ObsidianGraph` and its tests from repo root into `graph-rag/` subdirectory; updated import paths.
+- Updated `.gitignore` to track `dist/skills/**` release artifacts (opt-in, commit-manually workflow) while excluding private keys and dev license files.
+- Updated README with bundle command reference, release folder structure, and receiver verification instructions.
+- Removed `TEST_PLAN.md` (superseded by `docs/runbooks/` and the automated E2E suite).
+
 ## [0.1.0.0] - 2026-04-19
 
 ### Added

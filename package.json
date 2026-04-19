@@ -1,7 +1,7 @@
 {
   "name": "skillpack",
   "private": true,
-  "version": "0.1.0.0",
+  "version": "0.2.0.0",
   "description": "Commerce layer for signed, license-gated MCPB skill bundles.",
   "packageManager": "bun@1.3.11",
   "workspaces": [
@@ -11,7 +11,9 @@
     "test": "bun test",
     "test:unit": "bun test obsidian-query.test.ts packages/*/test",
     "test:e2e": "bun test e2e",
-    "test:crypto": "bun test packages/crypto/test"
+    "test:crypto": "bun test packages/crypto/test",
+    "bundle:laws-consultant": "bun scripts/bundle-laws-consultant.mjs",
+    "test:receiver-e2e": "bash scripts/test-receiver-e2e.sh"
   },
   "engines": {
     "bun": ">=1.0.0"

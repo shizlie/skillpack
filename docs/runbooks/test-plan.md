@@ -151,6 +151,56 @@ On failure:
 3. [ ] Add CI workflow step for `test:e2e`.
 4. [x] Keep `browse` lane documented as optional until UI exists.
 
+## Skill Distribution Test Matrix (`verticals/laws-consultant`)
+
+### Unit tests
+
+- Validate `SKILL.md` frontmatter shape (`name`, `description`) and naming consistency with folder.
+- Validate bundle metadata after build (`manifest.json`, `manifest.sha256`, `signature.bin`, `license.json` present).
+
+Suggested command:
+
+```bash
+bun test packages/cli/test/cli.test.js
+```
+
+### Integration tests
+
+- Run wiki MCP server against `verticals/laws-consultant/wiki`.
+- Verify `wiki_search` and `wiki_read_page` return expected pages for Singapore regulatory queries.
+
+Suggested command:
+
+```bash
+bun test packages/wiki-mcp/test/wiki-mcp.test.js
+```
+
+### E2E tests
+
+- Build signed skill bundle from vertical root using `bun run bundle:laws-consultant`.
+- Execute cross-package journey (`license issue/verify`, TSA manual attestation, wiki MCP retrieval).
+
+Suggested command:
+
+```bash
+bun run bundle:laws-consultant && bun run test:e2e
+```
+
+### UAT (manual acceptance)
+
+- Install/load generated `.mcpb` in target runtime/client.
+- Run 5 representative consultant prompts:
+  - PDPA breach notification obligations
+  - CII obligations under Cybersecurity Act
+  - Computer Misuse Act unauthorized access scenario
+  - MAS TRM control mapping request
+  - Cross-statute compliance checklist request
+- Accept only if responses:
+  - cite wiki evidence pages,
+  - separate law vs guidance,
+  - include risk notes and next actions,
+  - avoid unqualified legal-advice claims.
+
 ## Decision
 
 For the current shipped surface, **Playwright/browser is not the primary E2E path**.

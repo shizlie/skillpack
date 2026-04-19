@@ -52,6 +52,13 @@
         "@skillpack/protocol": "workspace:*",
       },
     },
+    "packages/wiki-mcp": {
+      "name": "@skillpack/wiki-mcp",
+      "version": "0.1.0",
+      "bin": {
+        "skillpack-wiki-mcp": "src/cli.js",
+      },
+    },
   },
   "packages": {
     "@skillpack/cli": ["@skillpack/cli@workspace:packages/cli"],
@@ -65,5 +72,7 @@
     "@skillpack/runtime": ["@skillpack/runtime@workspace:packages/runtime"],
 
     "@skillpack/tsa": ["@skillpack/tsa@workspace:packages/tsa"],
+
+    "@skillpack/wiki-mcp": ["@skillpack/wiki-mcp@workspace:packages/wiki-mcp"],
   }
 }
