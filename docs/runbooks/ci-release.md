@@ -53,14 +53,22 @@ import('../packages/crypto/src/index.js').then(({ generateEd25519KeyPair }) => {
 
 ### Step 2: Add to GitHub Secrets
 
+Navigate to:
+
 ```
-Settings → Secrets and variables → Actions → New repository secret
+https://github.com/<org>/skillpack/settings/secrets/actions
 ```
+
+The page has two sections: **Repository secrets** and **Environment secrets**.
+
+Use **Repository secrets** — click the **"New repository secret"** button in that section. It does NOT ask for an environment. If you see an environment dropdown, you clicked the wrong button (Environment secrets section).
+
+Add two secrets:
 
 | Secret name | Value |
 |---|---|
-| `LAWS_CONSULTANT_PRIVATE_KEY` | Contents of `release-private.pem` |
-| `LAWS_CONSULTANT_PUBLIC_KEY` | Contents of `release-public.pem` |
+| `LAWS_CONSULTANT_PRIVATE_KEY` | Full contents of `release-private.pem` including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` lines |
+| `LAWS_CONSULTANT_PUBLIC_KEY` | Full contents of `release-public.pem` including the `-----BEGIN PUBLIC KEY-----` and `-----END PUBLIC KEY-----` lines |
 
 Delete the local key files after adding them:
 
