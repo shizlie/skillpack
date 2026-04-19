@@ -1,0 +1,16 @@
+{
+  "name": "@skillpack/wiki-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "skillpack-wiki-mcp": "src/cli.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}

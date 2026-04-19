@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import { generateEd25519KeyPair } from "@skillpack/crypto";
-import { createLicenseFetchHandler } from "../src/index.js";
+import { createLicenseFetchHandler, createSqliteLeaseStore } from "../src/index.js";
 
 test("issue + verify lease roundtrip works", async () => {
   const keys = generateEd25519KeyPair();
@@ -90,6 +93,8 @@ test("manual TSA attestation endpoint accepts contract payload", async () => {
     new Request("http://local/v1/tsa/manual-attest", {
       method: "POST",
       body: JSON.stringify({
+        customerId: "cust-2",
+        seatId: "seat-a",
         operatorId: "ops",
         ticketId: "INC-42",
         reason: "TSA outage incident response for offline customer",
@@ -101,6 +106,8 @@ test("manual TSA attestation endpoint accepts contract payload", async () => {
   const body = await res.json();
   expect(body.accepted).toBe(true);
   expect(body.record.source).toBe("manual-time-attestation");
+  expect(body.record.customerId).toBe("cust-2");
+  expect(body.record.seatId).toBe("seat-a");
 });
 
 test("lease issue exposes TSA warning state when token is near expiry", async () => {
@@ -122,4 +129,57 @@ test("lease issue exposes TSA warning state when token is near expiry", async ()
   );
   const body = await res.json();
   expect(body.tsaState.status).toBe("warning");
+});
+
+test("manual TSA attestation latest endpoint returns most recent per customer+seat", async () => {
+  const keys = generateEd25519KeyPair();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skillpack-license-server-"));
+  const dbPath = path.join(dir, "lease-store.sqlite");
+  const leaseStore = createSqliteLeaseStore({ dbPath });
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    leaseStore,
+  });
+
+  const first = await fetch(
+    new Request("http://local/v1/tsa/manual-attest", {
+      method: "POST",
+      body: JSON.stringify({
+        customerId: "cust-4",
+        seatId: "seat-1",
+        operatorId: "op-1",
+        ticketId: "INC-1",
+        reason: "TSA outage handled for first escalation path",
+        attestedAtSec: 1_800_000_010,
+      }),
+    })
+  );
+  expect(first.status).toBe(200);
+
+  const second = await fetch(
+    new Request("http://local/v1/tsa/manual-attest", {
+      method: "POST",
+      body: JSON.stringify({
+        customerId: "cust-4",
+        seatId: "seat-1",
+        operatorId: "op-2",
+        ticketId: "INC-2",
+        reason: "TSA outage follow-up attestation after operator handoff",
+        attestedAtSec: 1_800_000_020,
+      }),
+    })
+  );
+  expect(second.status).toBe(200);
+
+  const latest = await fetch(
+    new Request(
+      "http://local/v1/tsa/manual-attestations/latest?customerId=cust-4&seatId=seat-1",
+      { method: "GET" }
+    )
+  );
+  expect(latest.status).toBe(200);
+  const latestBody = await latest.json();
+  expect(latestBody.accepted).toBe(true);
+  expect(latestBody.record.ticketId).toBe("INC-2");
 });

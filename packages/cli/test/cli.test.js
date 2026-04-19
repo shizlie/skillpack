@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { generateEd25519KeyPair } from "@skillpack/crypto";
+import { createLicenseFetchHandler } from "@skillpack/license-server";
 import { runSkillpackCli } from "../src/index.js";
 
 function makeIo() {
@@ -73,4 +74,58 @@ test("cli: tsa manual-attest validates required fields", async () => {
   const parsed = JSON.parse(sink.read().out);
   expect(parsed.accepted).toBe(true);
   expect(parsed.record.source).toBe("manual-time-attestation");
+});
+
+test("cli: tsa manual-attest posts to server and latest-attestation reads record", async () => {
+  const keys = generateEd25519KeyPair();
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+  });
+
+  const attestSink = makeIo();
+  const attestCode = await runSkillpackCli(
+    [
+      "tsa",
+      "manual-attest",
+      "--server-url",
+      "http://local",
+      "--customer-id",
+      "cust-9",
+      "--seat-id",
+      "seat-9",
+      "--operator-id",
+      "op-9",
+      "--ticket-id",
+      "INC-9",
+      "--reason",
+      "Manual attestation submitted during TSA outage workflow",
+      "--attested-at-sec",
+      "1800000000",
+    ],
+    attestSink.io,
+    { fetchImpl: fetch }
+  );
+  expect(attestCode).toBe(0);
+  const attestParsed = JSON.parse(attestSink.read().out);
+  expect(attestParsed.record.customerId).toBe("cust-9");
+
+  const latestSink = makeIo();
+  const latestCode = await runSkillpackCli(
+    [
+      "tsa",
+      "latest-attestation",
+      "--server-url",
+      "http://local",
+      "--customer-id",
+      "cust-9",
+      "--seat-id",
+      "seat-9",
+    ],
+    latestSink.io,
+    { fetchImpl: fetch }
+  );
+  expect(latestCode).toBe(0);
+  const latestParsed = JSON.parse(latestSink.read().out);
+  expect(latestParsed.record.ticketId).toBe("INC-9");
 });

@@ -30,6 +30,11 @@ function nowSec() {
   return Math.floor(Date.now() / 1000);
 }
 
+function normalizeServerUrl(serverUrl) {
+  if (!serverUrl) return null;
+  return serverUrl.endsWith("/") ? serverUrl.slice(0, -1) : serverUrl;
+}
+
 function parseIntArg(value, fallback) {
   if (value === undefined || value === null) return fallback;
   const parsed = Number.parseInt(value, 10);
@@ -74,7 +79,7 @@ function verifyLease(commandArgs) {
   return { status: 200, body: { valid: true, payload } };
 }
 
-function manualAttest(commandArgs) {
+async function manualAttest(commandArgs, fetchImpl) {
   const flags = parseArgMap(commandArgs);
   const contract = createManualTimeAttestationContract();
   const record = contract.createRecord({
@@ -83,10 +88,48 @@ function manualAttest(commandArgs) {
     reason: flags.reason,
     attestedAtSec: parseIntArg(flags["attested-at-sec"], undefined),
   });
-  return { status: 200, body: { accepted: true, record } };
+  const serverUrl = normalizeServerUrl(flags["server-url"]);
+  if (!serverUrl) {
+    return { status: 200, body: { accepted: true, record } };
+  }
+  const response = await fetchImpl(
+    new Request(`${serverUrl}/v1/tsa/manual-attest`, {
+      method: "POST",
+      body: JSON.stringify({
+        customerId: flags["customer-id"],
+        seatId: flags["seat-id"] ?? "default",
+        operatorId: record.operatorId,
+        ticketId: record.ticketId,
+        reason: record.reason,
+        attestedAtSec: record.attestedAtSec,
+      }),
+    })
+  );
+  return { status: response.status, body: await response.json() };
 }
 
-export async function runSkillpackCli(args, io = process) {
+async function latestAttestation(commandArgs, fetchImpl) {
+  const flags = parseArgMap(commandArgs);
+  const serverUrl = normalizeServerUrl(flags["server-url"]);
+  if (!serverUrl) throw new Error("missing_server_url");
+  if (!flags["customer-id"]) throw new Error("missing_customer_id");
+  const seatId = flags["seat-id"] ?? "default";
+  const response = await fetchImpl(
+    new Request(
+      `${serverUrl}/v1/tsa/manual-attestations/latest?customerId=${encodeURIComponent(
+        flags["customer-id"]
+      )}&seatId=${encodeURIComponent(seatId)}`,
+      { method: "GET" }
+    )
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+export async function runSkillpackCli(
+  args,
+  io = process,
+  { fetchImpl = fetch } = {}
+) {
   const group = args[0];
   const action = args[1];
   try {
@@ -96,10 +139,12 @@ export async function runSkillpackCli(args, io = process) {
     } else if (group === "license" && action === "verify") {
       result = verifyLease(args.slice(2));
     } else if (group === "tsa" && action === "manual-attest") {
-      result = manualAttest(args.slice(2));
+      result = await manualAttest(args.slice(2), fetchImpl);
+    } else if (group === "tsa" && action === "latest-attestation") {
+      result = await latestAttestation(args.slice(2), fetchImpl);
     } else {
       io.stderr.write(
-        "usage: skillpack license issue|verify ... OR skillpack tsa manual-attest ...\n"
+        "usage: skillpack license issue|verify ... OR skillpack tsa manual-attest|latest-attestation ...\n"
       );
       return 2;
     }

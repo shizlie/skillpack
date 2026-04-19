@@ -80,3 +80,44 @@ test("executeWithRuntimeLease emits meter events and runs action", async () => {
   expect(events[1].kind).toBe("runtime_success");
   expect(verifyMeterChain(events, chainKey)).toBe(true);
 });
+
+test("runtime TSA policy: expired token requires manual attestation", () => {
+  const keys = generateEd25519KeyPair();
+  const lease = buildLease(keys.privateKeyPem, 1_800_000_500);
+  expect(() =>
+    verifyLeaseForRuntime({
+      leaseToken: lease,
+      publicKeyPem: keys.publicKeyPem,
+      nowSec: 1_800_000_550,
+      tsaPolicy: {
+        lastTsaTokenAtSec: 1_800_000_550 - 8 * 24 * 60 * 60,
+      },
+    })
+  ).toThrow(/runtime_tsa_expired_manual_attestation_required/);
+});
+
+test("runtime TSA policy: accepts fresh manual attestation for expired token", () => {
+  const keys = generateEd25519KeyPair();
+  const nowSec = 1_800_000_550;
+  const lastTsaTokenAtSec = nowSec - 8 * 24 * 60 * 60;
+  const lease = buildLease(keys.privateKeyPem, 1_800_000_500);
+  const out = verifyLeaseForRuntime({
+    leaseToken: lease,
+    publicKeyPem: keys.publicKeyPem,
+    nowSec,
+    tsaPolicy: {
+      lastTsaTokenAtSec,
+      manualAttestation: {
+        operatorId: "op-1",
+        ticketId: "INC-99",
+        reason: "Validated trusted wall-clock during upstream TSA outage",
+        attestedAtSec: nowSec - 300,
+        recordedAtSec: nowSec - 280,
+      },
+      maxManualAttestationAgeSec: 3600,
+    },
+  });
+  expect(out.mode).toBe("grace");
+  expect(out.tsa.status).toBe("expired");
+  expect(out.tsa.manualAttestationUsed).toBe(true);
+});

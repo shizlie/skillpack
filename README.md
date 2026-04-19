@@ -99,5 +99,40 @@ Eng review is complete. Week-1 foundations and CLI/runtime integration are imple
 
 Next implementation lane:
 
-- Replace in-memory lease storage with persistent hosted/self-hosted adapters
-- Complete incident-ready TSA outage handling (operator workflow + runbook)
+- Add CI/CD release pipeline for distributable artifacts (`packages/cli`, `packages/runtime`)
+- Package as `.mcpb`
+
+## Wiki via MCP (implemented)
+
+`@skillpack/wiki-mcp` exposes the local vertical wiki as MCP tools/resources.
+
+- Package: `packages/wiki-mcp`
+- Default wiki path: `verticals/laws-consultant/wiki`
+- CLI binary: `skillpack-wiki-mcp`
+
+Supported MCP methods:
+
+- `initialize`
+- `tools/list`
+- `tools/call` (`wiki_search`, `wiki_read_page`)
+- `resources/list`
+- `resources/read` (`wiki://index`, `wiki://page/<slug>`)
+
+Run locally:
+
+`bun run packages/wiki-mcp/src/cli.js --wiki-dir=verticals/laws-consultant/wiki`
+
+## TSA outage incident workflow (implemented)
+
+For air-gapped customers where TSA freshness passes max age and no sneakernet token is available:
+
+1. Operator submits a manual attestation to the license server:
+   `skillpack tsa manual-attest --server-url <url> --customer-id <id> --seat-id <id> --operator-id <id> --ticket-id <id> --reason "<incident note>" --attested-at-sec <unix-sec>`
+2. Runtime must enforce TSA policy with this attestation record when token freshness is expired.
+3. Operator can retrieve the latest stored attestation for a customer/seat:
+   `skillpack tsa latest-attestation --server-url <url> --customer-id <id> --seat-id <id>`
+
+Storage integration:
+
+- `@skillpack/license-server` now supports `createSqliteLeaseStore({ dbPath })` for persistent lease counters + manual attestation records.
+- `startLicenseServer({ storageMode: "sqlite", storagePath: "/path/to/lease-store.sqlite" })` enables persistent self-hosted storage.

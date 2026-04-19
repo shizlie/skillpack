@@ -12,8 +12,12 @@ The format is based on Keep a Changelog.
 - Added `@skillpack/runtime` workspace package for lease verification, grace handling, and meter-chain event emission.
 - Added root-level `ObsidianGraph` query utility with SQLite-backed wiki-link ingestion and context expansion.
 - Added tests for CLI/runtime behavior and regression coverage for `ObsidianGraph`.
+- Added `@skillpack/wiki-mcp` workspace package exposing wiki content via MCP `tools` and `resources`.
+- Added `skillpack-wiki-mcp` stdio server CLI with support for `initialize`, `tools/list`, `tools/call`, `resources/list`, and `resources/read`.
+- Added wiki MCP tests covering page listing/reading/search and MCP request handling.
 
 ### Changed
 
 - Updated workspace lockfile to include new `@skillpack/cli` and `@skillpack/runtime` packages.
 - Added release-pipeline follow-up TODO for distributable artifacts (`packages/cli`, `packages/runtime`).
+- Marked "Expose the WIKI via MCP" as complete in TODOs and updated README with usage/docs.

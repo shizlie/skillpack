@@ -3,9 +3,14 @@ import {
   leaseTokenInternals,
   verifyDetached,
 } from "@skillpack/crypto";
-import { validateLeasePayload } from "@skillpack/protocol";
+import {
+  evaluateTsaTokenFreshness,
+  validateLeasePayload,
+  validateManualTimeAttestation,
+} from "@skillpack/protocol";
 
 const DEFAULT_GRACE_SEC = 72 * 60 * 60;
+const DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC = 24 * 60 * 60;
 
 function decodeLeaseParts(leaseToken) {
   const parts = leaseToken.split(".");
@@ -31,6 +36,7 @@ export function verifyLeaseForRuntime({
   publicKeyPem,
   nowSec = Math.floor(Date.now() / 1000),
   graceSec = DEFAULT_GRACE_SEC,
+  tsaPolicy,
 }) {
   const { headerPart, payloadPart, signaturePart, header, payload } =
     decodeLeaseParts(leaseToken);
@@ -43,9 +49,52 @@ export function verifyLeaseForRuntime({
     throw new Error("runtime_lease_invalid_signature");
   }
 
-  if (nowSec <= payload.exp) return { mode: "active", payload };
-  if (nowSec <= payload.exp + graceSec) return { mode: "grace", payload };
-  throw new Error("runtime_lease_expired_past_grace");
+  let mode = "active";
+  if (nowSec <= payload.exp) {
+    mode = "active";
+  } else if (nowSec <= payload.exp + graceSec) {
+    mode = "grace";
+  } else {
+    throw new Error("runtime_lease_expired_past_grace");
+  }
+
+  if (!tsaPolicy) return { mode, payload, tsa: null };
+
+  const tsaState = evaluateTsaTokenFreshness(tsaPolicy.lastTsaTokenAtSec, nowSec, {
+    maxTokenAgeSec: tsaPolicy.maxTokenAgeSec,
+    warningWindowSec: tsaPolicy.warningWindowSec,
+  });
+
+  let manualAttestationUsed = false;
+  if (tsaState.status === "expired") {
+    const record = tsaPolicy.manualAttestation;
+    if (!record) throw new Error("runtime_tsa_expired_manual_attestation_required");
+    validateManualTimeAttestation(record);
+    if (!Number.isInteger(record.recordedAtSec) || record.recordedAtSec <= 0) {
+      throw new Error("runtime_manual_attestation_invalid_recorded_time");
+    }
+    if (record.attestedAtSec > nowSec || record.recordedAtSec > nowSec) {
+      throw new Error("runtime_manual_attestation_from_future");
+    }
+    if (record.attestedAtSec < tsaPolicy.lastTsaTokenAtSec) {
+      throw new Error("runtime_manual_attestation_stale");
+    }
+    const maxManualAttestationAgeSec =
+      tsaPolicy.maxManualAttestationAgeSec ??
+      DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC;
+    if (
+      !Number.isInteger(maxManualAttestationAgeSec) ||
+      maxManualAttestationAgeSec <= 0
+    ) {
+      throw new Error("runtime_manual_attestation_invalid_max_age");
+    }
+    if (nowSec - record.attestedAtSec > maxManualAttestationAgeSec) {
+      throw new Error("runtime_manual_attestation_expired");
+    }
+    manualAttestationUsed = true;
+  }
+
+  return { mode, payload, tsa: { ...tsaState, manualAttestationUsed } };
 }
 
 export function createRuntimeMeter({
@@ -77,6 +126,7 @@ export async function executeWithRuntimeLease({
   publicKeyPem,
   nowSec,
   graceSec = DEFAULT_GRACE_SEC,
+  tsaPolicy,
   meter,
   run,
 }) {
@@ -85,13 +135,23 @@ export async function executeWithRuntimeLease({
     publicKeyPem,
     nowSec,
     graceSec,
+    tsaPolicy,
   });
-  meter?.append("runtime_start", { mode: lease.mode, sub: lease.payload.sub }, nowSec);
+  meter?.append(
+    "runtime_start",
+    {
+      mode: lease.mode,
+      sub: lease.payload.sub,
+      tsaStatus: lease.tsa?.status ?? null,
+      tsaManualAttestationUsed: lease.tsa?.manualAttestationUsed ?? false,
+    },
+    nowSec
+  );
 
   try {
-    const result = await run({ lease: lease.payload, mode: lease.mode });
-    meter?.append("runtime_success", { mode: lease.mode }, nowSec);
-    return { mode: lease.mode, result, payload: lease.payload };
+    const result = await run({ lease: lease.payload, mode: lease.mode, tsa: lease.tsa });
+    meter?.append("runtime_success", { mode: lease.mode, tsaStatus: lease.tsa?.status ?? null }, nowSec);
+    return { mode: lease.mode, result, payload: lease.payload, tsa: lease.tsa };
   } catch (error) {
     meter?.append("runtime_failure", { error: error.message }, nowSec);
     throw error;
@@ -101,4 +161,5 @@ export async function executeWithRuntimeLease({
 export const runtimeInternals = {
   decodeLeaseParts,
   DEFAULT_GRACE_SEC,
+  DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC,
 };
