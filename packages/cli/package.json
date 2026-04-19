@@ -1,0 +1,21 @@
+{
+  "name": "@skillpack/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "skillpack": "src/cli.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "@skillpack/crypto": "workspace:*",
+    "@skillpack/license-server": "workspace:*",
+    "@skillpack/tsa": "workspace:*"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}

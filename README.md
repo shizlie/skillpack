@@ -2,7 +2,7 @@
 
 Commerce layer for vertical AI skills shipped as compiled `.mcpb` bundles.
 
-**Status:** pre-product. Design approved 2026-04-18. Week-1 foundations shipped (crypto, protocol, license-server, TSA contracts).
+**Status:** pre-product. Design approved 2026-04-18. Week-1 foundations and CLI/runtime integration shipped (crypto, protocol, license-server, TSA contracts, CLI/runtime packages).
 
 ---
 
@@ -78,15 +78,16 @@ Open core. Runtime + CLI: open source (Apache 2.0 planned). Hosted license serve
 
 ## Status / next step
 
-Eng review is complete and week-1 foundations are implemented:
+Eng review is complete. Week-1 foundations and CLI/runtime integration are implemented:
 
 - `packages/crypto`: signing, lease token, meter-chain primitives + hardening tests
 - `packages/protocol`: shared validation contracts for lease/meter/TSA flows
 - `packages/license-server`: lease issue/verify endpoints + manual TSA attestation endpoint
 - `packages/tsa`: token-freshness monitor + manual attestation contract
+- `packages/cli`: `skillpack` CLI commands for lease issue/verify + manual TSA attestation
+- `packages/runtime`: runtime lease verification/grace handling + meter event emission
 
 Next implementation lane:
 
-- Wire CLI and runtime integration to license-server and protocol contracts
 - Replace in-memory lease storage with persistent hosted/self-hosted adapters
 - Complete incident-ready TSA outage handling (operator workflow + runbook)

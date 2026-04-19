@@ -5,6 +5,18 @@
     "": {
       "name": "skillpack",
     },
+    "packages/cli": {
+      "name": "@skillpack/cli",
+      "version": "0.1.0",
+      "bin": {
+        "skillpack": "src/cli.js",
+      },
+      "dependencies": {
+        "@skillpack/crypto": "workspace:*",
+        "@skillpack/license-server": "workspace:*",
+        "@skillpack/tsa": "workspace:*",
+      },
+    },
     "packages/crypto": {
       "name": "@skillpack/crypto",
       "version": "0.1.0",
@@ -25,6 +37,14 @@
       "name": "@skillpack/protocol",
       "version": "0.1.0",
     },
+    "packages/runtime": {
+      "name": "@skillpack/runtime",
+      "version": "0.1.0",
+      "dependencies": {
+        "@skillpack/crypto": "workspace:*",
+        "@skillpack/protocol": "workspace:*",
+      },
+    },
     "packages/tsa": {
       "name": "@skillpack/tsa",
       "version": "0.1.0",
@@ -34,11 +54,15 @@
     },
   },
   "packages": {
+    "@skillpack/cli": ["@skillpack/cli@workspace:packages/cli"],
+
     "@skillpack/crypto": ["@skillpack/crypto@workspace:packages/crypto"],
 
     "@skillpack/license-server": ["@skillpack/license-server@workspace:packages/license-server"],
 
     "@skillpack/protocol": ["@skillpack/protocol@workspace:packages/protocol"],
+
+    "@skillpack/runtime": ["@skillpack/runtime@workspace:packages/runtime"],
 
     "@skillpack/tsa": ["@skillpack/tsa@workspace:packages/tsa"],
   }
