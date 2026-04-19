@@ -1,4 +1,9 @@
 import crypto from "node:crypto";
+import {
+  assertMonotonicLeaseCounter,
+  validateLeasePayload,
+  validateMeterEvent,
+} from "@skillpack/protocol";
 
 const LEASE_VERSION = "spk1";
 const DEFAULT_CLOCK_SKEW_SEC = 300;
@@ -57,26 +62,8 @@ export function verifyDetached(message, signatureB64Url, publicKeyPem) {
   return crypto.verify(null, msg, publicKeyPem, signature);
 }
 
-function assertLeasePayload(payload) {
-  const required = ["iss", "sub", "iat", "exp", "jti", "leaseCounter"];
-  for (const key of required) {
-    if (payload[key] === undefined || payload[key] === null) {
-      throw new Error(`lease_payload_missing_${key}`);
-    }
-  }
-  if (!Number.isInteger(payload.iat) || !Number.isInteger(payload.exp)) {
-    throw new Error("lease_payload_invalid_time");
-  }
-  if (payload.exp <= payload.iat) {
-    throw new Error("lease_payload_exp_before_iat");
-  }
-  if (!Number.isInteger(payload.leaseCounter) || payload.leaseCounter < 0) {
-    throw new Error("lease_payload_invalid_counter");
-  }
-}
-
 export function createLeaseToken(payload, privateKeyPem) {
-  assertLeasePayload(payload);
+  validateLeasePayload(payload);
   const header = { alg: "EdDSA", typ: "SPK_LEASE", v: 1 };
   const signedPayload = {
     ...payload,
@@ -114,7 +101,7 @@ export function verifyLeaseToken(
     throw new Error("lease_token_invalid_header");
   }
   if (payload.v !== LEASE_VERSION) throw new Error("lease_token_invalid_version");
-  assertLeasePayload(payload);
+  validateLeasePayload(payload);
 
   const message = `${headerPart}.${payloadPart}`;
   if (!verifyDetached(message, sigPart, publicKeyPem)) {
@@ -135,9 +122,7 @@ export function createMeterChainKey() {
 }
 
 export function chainMeterEvent({ prevHash = GENESIS_HASH, seq, at, kind, data }, chainKeyB64Url) {
-  if (!Number.isInteger(seq) || seq < 0) throw new Error("meter_invalid_seq");
-  if (!Number.isInteger(at) || at <= 0) throw new Error("meter_invalid_time");
-  if (typeof kind !== "string" || kind.length === 0) throw new Error("meter_invalid_kind");
+  validateMeterEvent({ prevHash, seq, at, kind, data });
   if (!chainKeyB64Url) throw new Error("meter_missing_key");
 
   const event = { prevHash, seq, at, kind, data };
@@ -184,3 +169,5 @@ export const leaseTokenInternals = {
   DEFAULT_CLOCK_SKEW_SEC,
   GENESIS_HASH,
 };
+
+export { assertMonotonicLeaseCounter };

@@ -1,0 +1,45 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "skillpack",
+    },
+    "packages/crypto": {
+      "name": "@skillpack/crypto",
+      "version": "0.1.0",
+      "dependencies": {
+        "@skillpack/protocol": "workspace:*",
+      },
+    },
+    "packages/license-server": {
+      "name": "@skillpack/license-server",
+      "version": "0.1.0",
+      "dependencies": {
+        "@skillpack/crypto": "workspace:*",
+        "@skillpack/protocol": "workspace:*",
+        "@skillpack/tsa": "workspace:*",
+      },
+    },
+    "packages/protocol": {
+      "name": "@skillpack/protocol",
+      "version": "0.1.0",
+    },
+    "packages/tsa": {
+      "name": "@skillpack/tsa",
+      "version": "0.1.0",
+      "dependencies": {
+        "@skillpack/protocol": "workspace:*",
+      },
+    },
+  },
+  "packages": {
+    "@skillpack/crypto": ["@skillpack/crypto@workspace:packages/crypto"],
+
+    "@skillpack/license-server": ["@skillpack/license-server@workspace:packages/license-server"],
+
+    "@skillpack/protocol": ["@skillpack/protocol@workspace:packages/protocol"],
+
+    "@skillpack/tsa": ["@skillpack/tsa@workspace:packages/tsa"],
+  }
+}

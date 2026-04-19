@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  assertMonotonicLeaseCounter,
   chainMeterEvent,
   createLeaseToken,
   createMeterChainKey,
@@ -139,4 +140,67 @@ test("meter chain: tampered event is detected", () => {
   expect(() => verifyMeterChain([e0, tampered], key)).toThrow(
     /meter_hash_mismatch/
   );
+});
+
+test("lease token: corrupted base64/json segment fails parse", () => {
+  const { publicKeyPem, privateKeyPem } = generateEd25519KeyPair();
+  const now = 1_800_000_000;
+  const token = createLeaseToken(
+    {
+      iss: "vendor-1",
+      sub: "customer-1",
+      iat: now,
+      exp: now + 60,
+      jti: "lease-corrupt",
+      leaseCounter: 9,
+    },
+    privateKeyPem
+  );
+  const [, payload, signature] = token.split(".");
+  const corruptedHeader = "*";
+  expect(() =>
+    verifyLeaseToken(`${corruptedHeader}.${payload}.${signature}`, publicKeyPem, {
+      nowSec: now + 1,
+    })
+  ).toThrow(/lease_token_invalid_json/);
+});
+
+test("lease token: invalid header fields are rejected before signature", () => {
+  const { publicKeyPem, privateKeyPem } = generateEd25519KeyPair();
+  const now = 1_800_000_000;
+  const token = createLeaseToken(
+    {
+      iss: "vendor-1",
+      sub: "customer-1",
+      iat: now,
+      exp: now + 60,
+      jti: "lease-header",
+      leaseCounter: 10,
+    },
+    privateKeyPem
+  );
+  const [, payload, signature] = token.split(".");
+  const badHeader = Buffer.from(
+    JSON.stringify({ alg: "HS256", typ: "SPK_LEASE", v: 1 })
+  )
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+
+  expect(() =>
+    verifyLeaseToken(`${badHeader}.${payload}.${signature}`, publicKeyPem, {
+      nowSec: now + 1,
+    })
+  ).toThrow(/lease_token_invalid_header/);
+});
+
+test("lease counter monotonicity: rejects non-increasing counters", () => {
+  expect(() => assertMonotonicLeaseCounter(4, 4)).toThrow(
+    /lease_counter_not_monotonic/
+  );
+  expect(() => assertMonotonicLeaseCounter(4, 3)).toThrow(
+    /lease_counter_not_monotonic/
+  );
+  expect(() => assertMonotonicLeaseCounter(4, 5)).not.toThrow();
 });
