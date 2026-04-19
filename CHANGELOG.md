@@ -15,6 +15,9 @@ The format is based on Keep a Changelog.
 - Added `@skillpack/wiki-mcp` workspace package exposing wiki content via MCP `tools` and `resources`.
 - Added `skillpack-wiki-mcp` stdio server CLI with support for `initialize`, `tools/list`, `tools/call`, `resources/list`, and `resources/read`.
 - Added wiki MCP tests covering page listing/reading/search and MCP request handling.
+- Added `e2e/full-journey.test.js` covering end-to-end journeys for license lifecycle, TSA outage fallback, and wiki MCP stdio flows.
+- Added root scripts `test:unit` and `test:e2e` to separate fast package tests from cross-package E2E flows.
+- Added local scripts and test harness support for `test:unit` and `test:e2e`; CI workflow wiring deferred.
 
 ### Changed
 

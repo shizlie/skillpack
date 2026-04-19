@@ -83,6 +83,13 @@ Open core. Runtime + CLI: open source (Apache 2.0 planned). Hosted license serve
 - `TODOS.md`: remaining implementation backlog
 - `CLAUDE.md`: contributor/project operating guide
 - `NOTES.md`: research notes and thesis context
+- `TEST_PLAN.md`: AI-first unit + E2E test strategy and execution policy
+
+## Test execution
+
+- Unit/contract tests: `bun run test:unit`
+- Cross-package E2E journey tests: `bun run test:e2e`
+- Full local test run: `bun run test:unit && bun run test:e2e`
 
 ---
 
