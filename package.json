@@ -1,0 +1,17 @@
+{
+  "name": "skillpack",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Commerce layer for signed, license-gated MCPB skill bundles.",
+  "packageManager": "bun@1.3.11",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "test:crypto": "bun test packages/crypto/test"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}

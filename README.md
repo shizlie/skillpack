@@ -2,7 +2,7 @@
 
 Commerce layer for vertical AI skills shipped as compiled `.mcpb` bundles.
 
-**Status:** pre-product. Design approved 2026-04-18. Implementation has not started.
+**Status:** pre-product. Design approved 2026-04-18. Implementation started (crypto foundation in progress).
 
 ---
 
@@ -20,7 +20,6 @@ skillpack gives vendors:
 1. **A CLI** to bundle a skill into a signed `.mcpb` (Anthropic's MCP bundle format)
 2. **An embedded runtime** that verifies the license lease offline, enforces TTL + grace, and writes a tamper-resistant usage log
 3. **A license server** (hosted on Cloudflare Workers, or self-hosted via Docker for air-gapped customers) that issues leases and ingests meter logs
-4. **A vendor dashboard** to manage customers, leases, and usage
 
 ---
 
@@ -39,14 +38,14 @@ Compiled `.mcpb` bundles fix the format. skillpack adds the commerce.
 | Layer                        | Stack                                                              |
 | ---------------------------- | ------------------------------------------------------------------ |
 | Vendor CLI                   | Bun + TypeScript                                                   |
-| Embedded runtime             | Node + `better-sqlite3` (Claude Desktop hosts MCPB via Node)       |
-| Signing                      | Ed25519 via `@noble/ed25519`                                       |
-| Licensing                    | Lease-based: 30d TTL, 72h grace. Not instant revoke.               |
-| Metering                     | HMAC-chained append-only log, key rotates per lease refresh        |
-| License server (hosted)      | Hono on Cloudflare Workers + D1                                    |
-| License server (self-hosted) | Docker + SQLite. Mandatory v1 deliverable for air-gapped buyers.   |
-| Vendor dashboard             | Deferred to post-LOI. v1 ships `skillpack license` CLI + REST API. |
-| Demo skill                   | One legal contract review skill. No second demo in v1.             |
+| Embedded runtime             | Node + `better-sqlite3` (Claude Desktop hosts MCPB via Node)      |
+| Signing                      | Ed25519 via `@noble/ed25519`                                      |
+| Licensing                    | Lease-based: 30d TTL, 72h grace. Not instant revoke.              |
+| Metering                     | HMAC-chained append-only log, key rotates per lease refresh       |
+| License server (hosted)      | Hono on Cloudflare Workers + D1                                   |
+| License server (self-hosted) | Docker + SQLite. Mandatory v1 deliverable for air-gapped buyers.  |
+| Vendor dashboard             | Deferred to post-LOI. v1 ships `skillpack license` CLI + REST API |
+| Demo skill                   | One legal contract review skill. No healthcare build in v1.       |
 
 Full design: `~/.gstack/projects/hcproduct-verticalAI/baoharryngo-master-design-20260418-233940.md`
 
@@ -54,7 +53,18 @@ Full design: `~/.gstack/projects/hcproduct-verticalAI/baoharryngo-master-design-
 
 ## Out of scope for v1
 
-FedRAMP, bytecode obfuscation, public marketplace, Stripe billing, Python/TS SDKs, format adapters for non-MCPB runtimes.
+- Vendor dashboard UI (CLI + REST API only)
+- Healthcare demo skill build (outreach only)
+- Multi-seat/per-node licensing (one license = one install)
+- FedRAMP, SOC2 Type II, HIPAA BAA (buyer-side vendor requirement)
+- Bytecode/native obfuscation (v2)
+- Stripe/billing integration (audit signal only in v1)
+- Public docs site
+- Language-specific SDKs (Python/TS); CLI wraps MCPB
+- Free hosted tier/multi-tenant license server
+- Out-of-band CRL push polling (daily lease refresh carries CRL)
+- D1 rearchitecture for high-volume ingest (revisit post-LOI)
+- LLM eval gate (no skillpack-owned prompt content in v1)
 
 ---
 
@@ -66,4 +76,12 @@ Open core. Runtime + CLI: open source (Apache 2.0 planned). Hosted license serve
 
 ## Status / next step
 
-14-day vendor outreach assignment in progress. Goal: 10 vendor conversations, no pitch, asking how they currently handle license enforcement on on-prem AI products. Three matching answers = build. Otherwise revise wedge.
+Eng review is complete and design decisions are documented. Implementation starts at `packages/crypto` (week 1), then split into two lanes:
+
+- Lane A: crypto -> license-server (+TSA sub-lane) -> CLI -> runtime -> demo legal skill
+- Lane B: TSA service in parallel after crypto
+
+One critical implementation gap remains open: TSA outage for air-gapped customers without sneakernet operator. v1 mitigation must include:
+
+- License-server warning logs for impending TSA token expiry
+- A manual time-attestation CLI escape hatch for incident response

@@ -11,7 +11,7 @@ That doc is the source of truth for product scope, architecture, threat model, s
 
 ## Status
 
-Pre-product. Pre-revenue. Design APPROVED, build not yet started. Current task: validate demand by emailing 10 vertical AI vendors before writing implementation code.
+Pre-product. Pre-revenue. Design APPROVED. Implementation started with `packages/crypto` foundation. Current task: complete week-1 crypto primitives and then split into lane-based build execution.
 
 ## Architecture (v1)
 
@@ -23,8 +23,8 @@ Pre-product. Pre-revenue. Design APPROVED, build not yet started. Current task: 
 - **License server, two flavors, both ship v1:**
     - Hosted: Hono on Cloudflare Workers + D1
     - Self-hosted: Docker image with embedded SQLite (mandatory for air-gapped customers)
-- **Dashboard:** Next.js, single page (usage chart + revoke button)
-- **Demo skill:** one — legal contract review
+- **Dashboard UI:** deferred to post-LOI. v1 ships CLI + REST API only.
+- **Demo skill:** one — legal contract review (healthcare build deferred)
 
 ## Conventions
 
@@ -37,16 +37,29 @@ Pre-product. Pre-revenue. Design APPROVED, build not yet started. Current task: 
 
 ## Out of scope for v1
 
-- FedRAMP / SOC2 / HSM attestation
-- Bytecode obfuscation
-- Indie-creator marketplace UI
-- Stripe billing integration (stub only)
-- Python SDK / TS SDK / language-specific runtimes (CLI wraps any MCPB)
-- Multi-format bundle adapters
+- Vendor dashboard UI
+- Healthcare demo skill build
+- Multi-seat/per-node licensing
+- FedRAMP, SOC2 Type II, HIPAA BAA
+- Bytecode/native obfuscation
+- Stripe billing integration
+- Public docs site
+- Python/TS authoring SDKs (CLI wraps MCPB)
+- Free hosted tier / multi-tenant license server
+- Out-of-band CRL push polling
+- D1 rearchitecture for high-volume meter ingest
+- LLM eval gate (no skillpack-owned prompt content in v1)
 
 ## Reviewer concerns (must resolve during implementation)
 
 See "Reviewer Concerns" section in design doc. Major items: lease refresh API contract, KMS key injection flow, clock-skew defense, multi-seat license granularity, failed-call billing semantics.
+
+## Critical gap to implement
+
+One unresolved critical gap remains from eng-review: TSA outage for air-gapped customers with no sneakernet operator. Required mitigation in implementation:
+
+- Emit TSA token expiry warnings from the license server
+- Provide a manual time-attestation CLI escape hatch for incident response
 
 ## gstack
 

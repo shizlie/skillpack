@@ -2,3 +2,6 @@
 .remember/logs/
 .remember/tmp/
 .obsidian/
+node_modules/
+coverage/
+dist/
