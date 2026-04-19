@@ -11,7 +11,7 @@ That doc is the source of truth for product scope, architecture, threat model, s
 
 ## Status
 
-Pre-product. Pre-revenue. Design APPROVED. Implementation started with `packages/crypto` foundation. Current task: complete week-1 crypto primitives and then split into lane-based build execution.
+Pre-product. Pre-revenue. Design APPROVED. Week-1 foundations are implemented (`packages/crypto`, `packages/protocol`, `packages/license-server`, `packages/tsa`). Current task: wire runtime + CLI integration and harden production storage/operations paths.
 
 ## Architecture (v1)
 
@@ -58,8 +58,9 @@ See "Reviewer Concerns" section in design doc. Major items: lease refresh API co
 
 One unresolved critical gap remains from eng-review: TSA outage for air-gapped customers with no sneakernet operator. Required mitigation in implementation:
 
-- Emit TSA token expiry warnings from the license server
-- Provide a manual time-attestation CLI escape hatch for incident response
+- Emit TSA token expiry warnings from the license server (foundation contract implemented)
+- Provide a manual time-attestation CLI escape hatch for incident response (foundation endpoint/contract implemented)
+- Complete end-to-end incident workflow (operator runbook, persistence, and runtime enforcement behavior)
 
 ## gstack
 

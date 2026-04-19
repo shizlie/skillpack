@@ -2,7 +2,7 @@
 
 Commerce layer for vertical AI skills shipped as compiled `.mcpb` bundles.
 
-**Status:** pre-product. Design approved 2026-04-18. Implementation started (crypto foundation in progress).
+**Status:** pre-product. Design approved 2026-04-18. Week-1 foundations shipped (crypto, protocol, license-server, TSA contracts).
 
 ---
 
@@ -42,8 +42,10 @@ Compiled `.mcpb` bundles fix the format. skillpack adds the commerce.
 | Signing                      | Ed25519 via `@noble/ed25519`                                      |
 | Licensing                    | Lease-based: 30d TTL, 72h grace. Not instant revoke.              |
 | Metering                     | HMAC-chained append-only log, key rotates per lease refresh       |
+| Shared protocol contracts    | Lease/meter/TSA validation + monotonic counter checks             |
 | License server (hosted)      | Hono on Cloudflare Workers + D1                                   |
 | License server (self-hosted) | Docker + SQLite. Mandatory v1 deliverable for air-gapped buyers.  |
+| TSA safeguards               | Token-freshness warnings + manual time-attestation contract       |
 | Vendor dashboard             | Deferred to post-LOI. v1 ships `skillpack license` CLI + REST API |
 | Demo skill                   | One legal contract review skill. No healthcare build in v1.       |
 
@@ -76,12 +78,15 @@ Open core. Runtime + CLI: open source (Apache 2.0 planned). Hosted license serve
 
 ## Status / next step
 
-Eng review is complete and design decisions are documented. Implementation starts at `packages/crypto` (week 1), then split into two lanes:
+Eng review is complete and week-1 foundations are implemented:
 
-- Lane A: crypto -> license-server (+TSA sub-lane) -> CLI -> runtime -> demo legal skill
-- Lane B: TSA service in parallel after crypto
+- `packages/crypto`: signing, lease token, meter-chain primitives + hardening tests
+- `packages/protocol`: shared validation contracts for lease/meter/TSA flows
+- `packages/license-server`: lease issue/verify endpoints + manual TSA attestation endpoint
+- `packages/tsa`: token-freshness monitor + manual attestation contract
 
-One critical implementation gap remains open: TSA outage for air-gapped customers without sneakernet operator. v1 mitigation must include:
+Next implementation lane:
 
-- License-server warning logs for impending TSA token expiry
-- A manual time-attestation CLI escape hatch for incident response
+- Wire CLI and runtime integration to license-server and protocol contracts
+- Replace in-memory lease storage with persistent hosted/self-hosted adapters
+- Complete incident-ready TSA outage handling (operator workflow + runbook)
