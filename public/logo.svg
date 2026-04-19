@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 290" fill="none">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <path fill="url(#g)" d="M128 0 L256 72 V218 L128 290 L0 218 V72 Z"/>
+    <path fill="#0F172A" fill-opacity=".35" d="M128 16 L235 77 L128 138 L21 77 Z"/>
+    <path fill="#0F172A" fill-opacity=".15" d="M21 77 L128 138 V272 L21 211 Z"/>
+    <path fill="#0F172A" fill-opacity=".25" d="M235 77 L128 138 V272 L235 211 Z"/>
+    <path fill="#fff" fill-opacity=".25" d="M128 40 L210 87 L128 134 L46 87 Z"/>
+    <path fill="#fff" opacity=".75" d="M150 175 L180 192 L180 225 L150 208 Z"/>
+    <path fill="#fff" opacity=".55" d="M106 175 L76 192 L76 225 L106 208 Z"/>
+  </g>
+  <text x="300" y="188" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="120" font-weight="700" fill="#0F172A" letter-spacing="-4">skillpack</text>
+</svg>
