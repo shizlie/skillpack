@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 
 import { generateEd25519KeyPair } from "@skillpack/crypto";
-import { createLicenseFetchHandler, createSqliteLeaseStore } from "../src/index.js";
+import { createLicenseFetchHandler } from "../src/index.js";
+import { createSqliteLeaseStore } from "../src/storage-sqlite.js";
 
 test("issue + verify lease roundtrip works", async () => {
   const keys = generateEd25519KeyPair();

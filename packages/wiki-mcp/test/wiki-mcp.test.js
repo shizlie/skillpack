@@ -37,6 +37,12 @@ test("wiki repository lists/reads/searches pages", () => {
   expect(search[0].page).toBe("alpha");
 });
 
+test("wiki repository blocks page traversal outside wiki root", () => {
+  const wikiDir = createFixtureWiki();
+  const repo = createWikiRepository({ wikiDir });
+  expect(() => repo.readPage("../README")).toThrow(/wiki_page_out_of_bounds/);
+});
+
 test("mcp server handles initialize/tools/resources/read/search", async () => {
   const wikiDir = createFixtureWiki();
   const mcp = createWikiMcpServer({ wikiDir });

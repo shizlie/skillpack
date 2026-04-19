@@ -57,6 +57,7 @@ function snippetAround(content, query, size = 220) {
 
 export function createWikiRepository({ wikiDir } = {}) {
   if (!wikiDir) throw new Error("wiki_missing_dir");
+  const wikiRoot = path.resolve(wikiDir);
 
   function listPages() {
     return readdirSync(wikiDir)
@@ -66,7 +67,12 @@ export function createWikiRepository({ wikiDir } = {}) {
 
   function readPage(pageName) {
     const fileName = normalizePageName(pageName);
-    return readFileSync(path.join(wikiDir, fileName), "utf8");
+    const absolutePath = path.resolve(wikiRoot, fileName);
+    const relativePath = path.relative(wikiRoot, absolutePath);
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      throw new Error("wiki_page_out_of_bounds");
+    }
+    return readFileSync(absolutePath, "utf8");
   }
 
   function search(query, { limit = DEFAULT_LIMIT } = {}) {

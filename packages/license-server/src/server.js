@@ -8,7 +8,6 @@ import {
 import { validateLeasePayload } from "@skillpack/protocol";
 import { createManualTimeAttestationContract, createTsaMonitor } from "@skillpack/tsa";
 import { createInMemoryLeaseStore } from "./storage.js";
-import { createSqliteLeaseStore } from "./storage-sqlite.js";
 
 const DEFAULT_TTL_SEC = 30 * 24 * 60 * 60;
 
@@ -174,11 +173,10 @@ export function createLicenseFetchHandler({
 
 export function startLicenseServer(options) {
   const storageMode = options?.storageMode ?? "memory";
-  const leaseStore =
-    options?.leaseStore ??
-    (storageMode === "sqlite"
-      ? createSqliteLeaseStore({ dbPath: options?.storagePath })
-      : createInMemoryLeaseStore());
+  const leaseStore = options?.leaseStore ?? createInMemoryLeaseStore();
+  if (!options?.leaseStore && storageMode === "sqlite") {
+    throw new Error("license_server_sqlite_store_not_injected");
+  }
   const fetch = createLicenseFetchHandler({ ...options, leaseStore });
   const port = options?.port ?? 3001;
   return Bun.serve({ port, fetch });
