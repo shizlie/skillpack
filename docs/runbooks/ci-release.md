@@ -108,9 +108,9 @@ The fix:
 2. Receiver writes the fingerprint down once, when they first onboard
 3. When verifying any future release, receiver passes the fingerprint:
 
-   ```bash
-   EXPECTED_PUBKEY_SHA256="<your-fingerprint>" ./runtime/receiver-verify-install.sh
-   ```
+    ```bash
+    EXPECTED_PUBKEY_SHA256="<your-fingerprint>" ./runtime/receiver-verify-install.sh
+    ```
 
 4. The verify script now does an extra check: hash the public key from the tarball, compare to the fingerprint. If they don't match, abort.
 
@@ -134,14 +134,14 @@ Save that string. Send it to receivers through whatever trusted channel you use 
 
 #### Decision tree: do I need this?
 
-| Situation | Need fingerprint? |
-|-----------|-------------------|
-| Hobby project, OSS users download from GitHub | No |
-| Internal company tool, employees install on dev machines | No |
-| Selling to small businesses, no security review required | No |
-| Selling to a hospital, law firm, bank, or defense contractor | **Yes** |
-| Customer asked you "how do we know your release is not tampered with" | **Yes** |
-| Air-gapped install with sneakernet transfer through unknown hands | **Yes** |
+| Situation                                                             | Need fingerprint? |
+| --------------------------------------------------------------------- | ----------------- |
+| Hobby project, OSS users download from GitHub                         | No                |
+| Internal company tool, employees install on dev machines              | No                |
+| Selling to small businesses, no security review required              | No                |
+| Selling to a hospital, law firm, bank, or defense contractor          | **Yes**           |
+| Customer asked you "how do we know your release is not tampered with" | **Yes**           |
+| Air-gapped install with sneakernet transfer through unknown hands     | **Yes**           |
 
 If you are unsure, skip this step. You can always start distributing the fingerprint later — your existing public key does not change, so the fingerprint stays valid.
 
@@ -214,6 +214,9 @@ The private key is also still safe in GitHub Secrets. You cannot view its value 
 # Bump VERSION file and CHANGELOG.md first, then:
 git tag v$(cat VERSION)
 git push origin v$(cat VERSION)
+# Incase you need to delete a bad tag and retry:
+git tag -d v0.2.0.0
+git push --delete origin v0.2.0.0
 ```
 
 The workflow runs automatically. Watch progress at:
