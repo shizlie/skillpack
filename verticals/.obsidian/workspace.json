@@ -11,10 +11,10 @@
             "id": "60498f298e3ac49d",
             "type": "leaf",
             "state": {
-              "type": "empty",
+              "type": "graph",
               "state": {},
-              "icon": "lucide-file",
-              "title": "New tab"
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
             }
           }
         ]
@@ -74,7 +74,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 375.5
   },
   "right": {
     "id": "fce2b2df2e81bf60",
@@ -178,8 +178,36 @@
   },
   "active": "60498f298e3ac49d",
   "lastOpenFiles": [
+    "laws-consultant/raw/Technology Risk Management Guidelines - Monetary Authority of Singapore.md",
+    "laws-consultant/raw/Copyright Act 2021 - Singapore Statutes Online.md",
+    "CLAUDE.md",
+    "laws-consultant/wiki/log.md",
+    "laws-consultant/wiki/index.md",
+    "laws-consultant/wiki/legislative-commencement-and-amendment-tracking.md",
+    "laws-consultant/wiki/cybersecurity-governance-singapore.md",
+    "laws-consultant/wiki/cross-border-ip-reciprocity.md",
+    "laws-consultant/wiki/breach-notification-and-incident-response.md",
+    "laws-consultant/wiki/data-protection-framework-singapore.md",
+    "laws-consultant/wiki/cybersecurity-service-regulation.md",
+    "laws-consultant/wiki/critical-information-infrastructure.md",
+    "laws-consultant/wiki/cyber-offences-and-unauthorised-access.md",
+    "laws-consultant/wiki/singapore-digital-regulatory-map.md",
+    "laws-consultant/wiki/technology-risk-management-guidelines-mas.md",
+    "laws-consultant/wiki/personal-data-protection-act-2012.md",
+    "laws-consultant/wiki/cybersecurity-act-2018.md",
+    "laws-consultant/wiki/copyright-act-2021.md",
+    "laws-consultant/wiki/computer-misuse-act-1993.md",
+    "AGENTS.md",
+    "QWEN.md",
+    "laws-consultant/raw/Computer Misuse Act 1993 - Singapore Statutes Online.md",
+    "laws-consultant/raw/Cybersecurity Act 2018 - Singapore Statutes Online.md",
+    "laws-consultant/raw/Personal Data Protection Act 2012 - Singapore Statutes Online.md",
+    "Clippings",
+    "GWEN.md",
+    "laws-consultant/CLAUDE.md",
+    "laws-consultant/wiki",
+    "laws-consultant/raw",
     "laws-consultant",
-    "laws-consultancy",
-    "CLAUDE.md"
+    "laws-consultancy"
   ]
 }
