@@ -11,7 +11,7 @@ That doc is the source of truth for product scope, architecture, threat model, s
 
 ## Status
 
-Pre-product. Pre-revenue. Design APPROVED. Week-1 foundations are implemented (`packages/crypto`, `packages/protocol`, `packages/license-server`, `packages/tsa`). Current task: wire runtime + CLI integration and harden production storage/operations paths.
+Pre-product. Pre-revenue. Design APPROVED. Week-1 foundations and CLI/runtime integration are implemented (`packages/crypto`, `packages/protocol`, `packages/license-server`, `packages/tsa`, `packages/cli`, `packages/runtime`). Current task: harden production storage/operations paths and ship release automation for distributable artifacts.
 
 ## Architecture (v1)
 

@@ -76,6 +76,16 @@ Open core. Runtime + CLI: open source (Apache 2.0 planned). Hosted license serve
 
 ---
 
+## Documentation map
+
+- `README.md`: product overview and current implementation status
+- `CHANGELOG.md`: shipped release history
+- `TODOS.md`: remaining implementation backlog
+- `CLAUDE.md`: contributor/project operating guide
+- `NOTES.md`: research notes and thesis context
+
+---
+
 ## Status / next step
 
 Eng review is complete. Week-1 foundations and CLI/runtime integration are implemented:
