@@ -1,0 +1,17 @@
+{
+  "name": "@skillpack/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "@skillpack/crypto": "workspace:*",
+    "@skillpack/protocol": "workspace:*"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}
