@@ -8,7 +8,9 @@ Based on Andrej Karpathy's LLM Wiki pattern.
 This wiki is a structured, interlinked knowledge base for planning a trip to Japan.
 Claude maintains the wiki. The human curates sources, asks questions, and guides the analysis.
 
-## Folder structure
+## Folder structure per Vertical
+
+At the moment, we have one folder per vertical. Each folder has its own `wiki/` and `raw/` subfolders. Minimal cross-vertical linking for now, but we can evolve the structure if needed.
 
 ```
 raw/          -- source documents (immutable -- never modify these)
