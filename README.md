@@ -4,7 +4,7 @@ Commerce layer for vertical AI skills shipped as compiled `.mcpb` bundles.
 
 **Status:** pre-product. Design approved 2026-04-18. Week-1 foundations and CLI/runtime integration shipped (crypto, protocol, license-server, TSA contracts, CLI/runtime packages).
 
----
+**From the initiator:** Please don't use this if not needed. Skills and knowledges should be shared in the open whenever possible, for the common good. I created this just to help moving scene forward, Skill As A Software (SaaS, SkAAS, or whatever you want to call it)
 
 ## What this is
 
@@ -35,9 +35,9 @@ Compiled `.mcpb` bundles fix the format. skillpack adds the commerce.
 
 ## Architecture (v1)
 
-| Layer                        | Stack                                                              |
-| ---------------------------- | ------------------------------------------------------------------ |
-| Vendor CLI                   | Bun + TypeScript                                                   |
+| Layer                        | Stack                                                             |
+| ---------------------------- | ----------------------------------------------------------------- |
+| Vendor CLI                   | Bun + TypeScript                                                  |
 | Embedded runtime             | Node + `better-sqlite3` (Claude Desktop hosts MCPB via Node)      |
 | Signing                      | Ed25519 via `@noble/ed25519`                                      |
 | Licensing                    | Lease-based: 30d TTL, 72h grace. Not instant revoke.              |
@@ -121,6 +121,43 @@ Output bundle contents:
 - `manifest.sha256`
 - `signature.bin` (if `--private-key-file` is provided)
 - `license.json` (if `--license-file` is provided)
+
+Preconfigured vertical bundle command (laws consultant):
+
+`bun run bundle:laws-consultant`
+
+This command:
+
+- treats `verticals/laws-consultant/` as the Agent Skill root (`SKILL.md` at top-level)
+- stages a safe bundle source (`SKILL.md` + archived `knowledge/wiki.tar.gz`) to avoid shipping plain wiki markdown files
+- embeds `verticals/laws-consultant/distribution/license.dev.json`
+- signs with a local dev key at `verticals/laws-consultant/distribution/keys/dev-private.pem` (auto-generated if missing)
+- outputs:
+    - `.mcpb` to `dist/skills/`
+    - single release folder: `dist/skills/laws-consultant-<version>/`
+    - single transfer archive: `dist/skills/laws-consultant-<version>-bundle.tar.gz`
+
+Release folder includes:
+
+- `laws-consultant-<version>.mcpb`
+- `laws-consultant-<version>.public.pem`
+- `SHA256SUMS`
+- `runtime/verify-bundle.mjs`
+- `runtime/install-skill.sh`
+- `VERIFY.md`
+- `skill/laws-consultant/` (ready-to-copy folder for Claude Code skills; only `SKILL.md`)
+
+Important:
+
+- Claude Code skills are folder-based (`~/.claude/skills/<name>/SKILL.md`).
+- `.mcpb` is for MCP Bundle workflows. Keep both distribution paths.
+- The `.mcpb` payload packages knowledge as an archived asset (`knowledge/wiki.tar.gz`) instead of plain wiki markdown files.
+
+Verify on receiver machine (inside extracted `laws-consultant-<version>/`):
+
+`shasum -a 256 -c SHA256SUMS`
+
+`node runtime/verify-bundle.mjs laws-consultant-<version>.mcpb laws-consultant-<version>.public.pem`
 
 ## Wiki via MCP (implemented)
 

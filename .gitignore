@@ -4,4 +4,9 @@
 .obsidian/
 node_modules/
 coverage/
-dist/
+dist/*
+!dist/skills/
+!dist/skills/**
+.gstack/browse-startup-error.log
+verticals/laws-consultant/distribution/keys/*.pem
+verticals/laws-consultant/distribution/license.dev.json
