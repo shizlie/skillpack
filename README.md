@@ -107,7 +107,20 @@ Eng review is complete. Week-1 foundations and CLI/runtime integration are imple
 Next implementation lane:
 
 - Add CI/CD release pipeline for distributable artifacts (`packages/cli`, `packages/runtime`)
-- Package as `.mcpb`
+
+## Bundle packaging (`.mcpb`) (implemented)
+
+`skillpack` now includes a bundle packaging command:
+
+`skillpack bundle build --input-dir <skill-dir> --bundle-id <id> --version <semver> --output-file <path>.mcpb [--private-key-file <pem>] [--license-file <json>]`
+
+Output bundle contents:
+
+- `skill/...` (copied skill files)
+- `manifest.json` (bundle metadata + file hashes)
+- `manifest.sha256`
+- `signature.bin` (if `--private-key-file` is provided)
+- `license.json` (if `--license-file` is provided)
 
 ## Wiki via MCP (implemented)
 

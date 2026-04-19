@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 import { generateEd25519KeyPair } from "@skillpack/crypto";
 import { createLicenseFetchHandler } from "@skillpack/license-server";
@@ -128,4 +129,46 @@ test("cli: tsa manual-attest posts to server and latest-attestation reads record
   expect(latestCode).toBe(0);
   const latestParsed = JSON.parse(latestSink.read().out);
   expect(latestParsed.record.ticketId).toBe("INC-9");
+});
+
+test("cli: bundle build creates .mcpb artifact", async () => {
+  const zipCheck = spawnSync("zip", ["-v"], { stdio: "ignore" });
+  if (zipCheck.status !== 0) return;
+
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "skillpack-bundle-test-"));
+  const inputDir = path.join(workspace, "skill-src");
+  fs.mkdirSync(inputDir, { recursive: true });
+  fs.writeFileSync(path.join(inputDir, "README.md"), "# Demo Skill\n");
+  fs.writeFileSync(path.join(inputDir, "config.json"), '{"k":"v"}\n');
+
+  const keys = generateEd25519KeyPair();
+  const privateKeyFile = path.join(workspace, "private.pem");
+  fs.writeFileSync(privateKeyFile, keys.privateKeyPem);
+  const outputFile = path.join(workspace, "out", "demo.mcpb");
+
+  const sink = makeIo();
+  const code = await runSkillpackCli(
+    [
+      "bundle",
+      "build",
+      "--input-dir",
+      inputDir,
+      "--bundle-id",
+      "demo-skill",
+      "--version",
+      "1.2.3",
+      "--private-key-file",
+      privateKeyFile,
+      "--output-file",
+      outputFile,
+    ],
+    sink.io
+  );
+  expect(code).toBe(0);
+  const parsed = JSON.parse(sink.read().out);
+  expect(parsed.bundleId).toBe("demo-skill");
+  expect(parsed.signed).toBe(true);
+  expect(parsed.fileCount).toBe(2);
+  expect(fs.existsSync(outputFile)).toBe(true);
+  expect(fs.statSync(outputFile).size).toBeGreaterThan(0);
 });

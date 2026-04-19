@@ -18,6 +18,8 @@ The format is based on Keep a Changelog.
 - Added `e2e/full-journey.test.js` covering end-to-end journeys for license lifecycle, TSA outage fallback, and wiki MCP stdio flows.
 - Added root scripts `test:unit` and `test:e2e` to separate fast package tests from cross-package E2E flows.
 - Added local scripts and test harness support for `test:unit` and `test:e2e`; CI workflow wiring deferred.
+- Added `skillpack bundle build` CLI command to package skills as `.mcpb` artifacts with manifest, hash file, optional embedded license, and optional detached signature.
+- Added CLI test coverage for `.mcpb` bundle artifact generation.
 
 ### Changed
 
