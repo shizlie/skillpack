@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Write signing keys
+        run: |
+          mkdir -p verticals/laws-consultant/distribution/keys
+          printf '%s' "$PRIVATE_KEY" > verticals/laws-consultant/distribution/keys/dev-private.pem
+          printf '%s' "$PUBLIC_KEY"  > verticals/laws-consultant/distribution/keys/dev-public.pem
+          chmod 600 verticals/laws-consultant/distribution/keys/dev-private.pem
+        env:
+          PRIVATE_KEY: ${{ secrets.LAWS_CONSULTANT_PRIVATE_KEY }}
+          PUBLIC_KEY: ${{ secrets.LAWS_CONSULTANT_PUBLIC_KEY }}
+
+      - name: Run tests
+        run: bun run test:unit
+
+      - name: Build bundle
+        run: bun run bundle:laws-consultant
+
+      - name: Extract version
+        id: version
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog entry
+        id: notes
+        run: |
+          # Extract the changelog block for this version
+          awk '/^## \['"${{ steps.version.outputs.version }}"'\]/{found=1; next} found && /^## \[/{exit} found{print}' CHANGELOG.md > /tmp/release-notes.md
+          echo "notes_file=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file "${{ steps.notes.outputs.notes_file }}" \
+            "dist/skills/laws-consultant-${VERSION}-bundle.tar.gz" \
+            "dist/skills/laws-consultant-${VERSION}-bundle.tar.gz.sha256"
