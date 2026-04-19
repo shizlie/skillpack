@@ -57,4 +57,5 @@ jobs:
             --title "v${VERSION}" \
             --notes-file "${{ steps.notes.outputs.notes_file }}" \
             "dist/skills/laws-consultant-${VERSION}-bundle.tar.gz" \
-            "dist/skills/laws-consultant-${VERSION}-bundle.tar.gz.sha256"
+            "dist/skills/laws-consultant-${VERSION}-bundle.tar.gz.sha256" \
+            "dist/skills/laws-consultant-${VERSION}/laws-consultant-${VERSION}.public.pem"

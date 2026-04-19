@@ -179,6 +179,33 @@ rm /tmp/release-private.pem /tmp/release-public.pem
 
 The keys now live only in GitHub Secrets. The CI workflow injects them at build time — they are never written to the repo or exposed in logs.
 
+#### Lost the public key? Need the fingerprint later?
+
+Don't worry. The public key is recoverable from any release. **You do NOT need to ship a new release.**
+
+Two ways to get it back:
+
+**Option A: Download from any release asset (easiest)**
+
+Every release publishes the public key as a standalone file:
+
+```bash
+gh release download v0.2.0.0 --pattern '*.public.pem' --repo shizlie/skillpack -O /tmp/release-public.pem
+shasum -a 256 /tmp/release-public.pem | awk '{print $1}'
+```
+
+Or via browser: go to the release page, download the `.public.pem` asset, hash it locally.
+
+**Option B: Extract from the bundle tarball**
+
+```bash
+gh release download v0.2.0.0 --pattern '*-bundle.tar.gz' --repo shizlie/skillpack -O /tmp/bundle.tar.gz
+tar -xzf /tmp/bundle.tar.gz -C /tmp
+shasum -a 256 /tmp/laws-consultant-*/laws-consultant-*.public.pem | awk '{print $1}'
+```
+
+The private key is also still safe in GitHub Secrets. You cannot view its value through the GitHub UI (write-only), but the workflow can still use it. You only need the local copy if you want to do off-CI signing.
+
 ---
 
 ## Triggering a release
@@ -216,11 +243,46 @@ Do **not** rotate keys mid-release. All assets in a given release must be signed
 
 ---
 
-## Local vs CI keypair
+## Two different keypairs: dev (local) vs production (CI)
 
-The bundle script uses `verticals/laws-consultant/distribution/keys/dev-private.pem` for local builds. The CI workflow injects secrets to that same path before running the script. This means:
+There are TWO keypairs in this project. They live in the same file path but mean different things. This is the most confusing part of the setup. Read carefully.
 
-- Local dev builds use an auto-generated dev key (fine for testing)
-- CI/release builds use the stable production key from secrets
+### The file path
 
-Do **not** commit the local dev private key. It is gitignored via `*.pem` exclusion. The public key distributed in release tarballs comes from whichever key was active at build time — local dev builds should not be sent to receivers.
+The bundle script always reads from one location:
+
+```
+verticals/laws-consultant/distribution/keys/dev-private.pem
+verticals/laws-consultant/distribution/keys/dev-public.pem
+```
+
+What is actually IN that file depends on where the build runs.
+
+### Scenario A: You run `bun run bundle:laws-consultant` on your laptop
+
+The bundle script looks for those `.pem` files. If they don't exist, it generates a fresh **throwaway dev keypair** and writes it there. This dev keypair is unique to your laptop.
+
+- Use case: testing the bundle pipeline, debugging, writing receiver runbooks
+- The resulting `.mcpb` is signed with your laptop's dev key
+- **Never give this `.mcpb` to a real receiver.** Their fingerprint check (if they do one) will fail, and even if they skip the check, every laptop produces a different key — there is no stable identity behind it
+- The dev keypair is gitignored via the `*.pem` rule — it never gets committed
+
+### Scenario B: CI runs the build on a tag push
+
+The CI workflow writes your **production keypair** (from GitHub Secrets) into the same `.pem` file paths BEFORE running the bundle script. The script then signs with your real production key.
+
+- Use case: every official release receivers will install
+- The resulting `.mcpb` is signed with the stable production key
+- The matching `.public.pem` is published as a release asset and embedded in the tarball
+- Receivers can verify the signature, and (if they do strict pinning) check the fingerprint matches what you told them out-of-band
+
+### Why use the same file path for both?
+
+So the bundle script does not need to know whether it's running on your laptop or in CI. Both paths produce a valid signed bundle. The difference is **which key got written there first**.
+
+### Rules
+
+- **Do not commit any `.pem` file.** They are gitignored. This includes both dev and production keys.
+- **Do not ship a laptop-built `.mcpb` to a real receiver.** Always release through CI so the production key signs it.
+- **The production private key only exists in GitHub Secrets.** Once you set it up (per Step 3 above), you should not have a local copy.
+- If you need to test the production key locally (rare, e.g. debugging a CI release issue), you can manually paste the secret into the local `.pem` files — but delete them after.
