@@ -20,76 +20,92 @@ Receivers download from the release page and verify with the pinned public key f
 
 ## One-time setup: secrets
 
-Two secrets are required. Both must come from the **same keypair** — the public key fingerprint is what receivers pin out-of-band. Rotating either key means receivers must re-pin.
+### Why this is needed
+
+Every `.mcpb` bundle is signed with an Ed25519 private key. Receivers verify the signature using the matching public key. To make this work in CI:
+
+- You generate a keypair once and store it in GitHub Secrets
+- Every CI release uses that same stable private key to sign the bundle
+- The matching public key is included in every release tarball so receivers can verify
+- Receivers who want strict security obtain the public key fingerprint from you out-of-band (not from the tarball), so an attacker who tampers with the tarball cannot also swap out the key
+
+**Both keys must come from the same keypair.** The private key signs bundles; the public key verifies them. They are mathematically linked — mismatched keys will cause verification to fail for every receiver.
+
+---
 
 ### Step 1: Generate a stable keypair (once)
 
+Run this on your local machine. It writes two `.pem` files to `/tmp`:
+
 ```bash
-cd /tmp
 node -e "
 const crypto = require('node:crypto');
 const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519', {
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
   publicKeyEncoding: { type: 'spki', format: 'pem' },
 });
-require('node:fs').writeFileSync('release-private.pem', privateKey, { mode: 0o600 });
-require('node:fs').writeFileSync('release-public.pem', publicKey);
-console.log('done');
+require('node:fs').writeFileSync('/tmp/release-private.pem', privateKey, { mode: 0o600 });
+require('node:fs').writeFileSync('/tmp/release-public.pem', publicKey);
+console.log('Keys written to /tmp/release-private.pem and /tmp/release-public.pem');
 "
 ```
 
-Or use the repo's own crypto package after `bun install`:
+Check they were created:
 
 ```bash
-node -e "
-import('../packages/crypto/src/index.js').then(({ generateEd25519KeyPair }) => {
-  const { privateKeyPem, publicKeyPem } = generateEd25519KeyPair();
-  require('node:fs').writeFileSync('/tmp/release-private.pem', privateKeyPem, { mode: 0o600 });
-  require('node:fs').writeFileSync('/tmp/release-public.pem', publicKeyPem);
-  console.log('done');
-});
-"
+cat /tmp/release-private.pem   # starts with -----BEGIN PRIVATE KEY-----
+cat /tmp/release-public.pem    # starts with -----BEGIN PUBLIC KEY-----
 ```
 
-### Step 2: Add to GitHub Secrets
+---
+
+### Step 2: Record the public key fingerprint (before deleting the files)
+
+This fingerprint is what you send to receivers so they can do strict key pinning. Do this **now**, while the files are still on disk:
+
+```bash
+shasum -a 256 /tmp/release-public.pem | awk '{print $1}'
+```
+
+Save that output (a 64-character hex string). Send it to receivers via email, a signed release note, or your customer portal — not inside the tarball. This is what makes key pinning meaningful: the fingerprint comes from a trusted channel, not from the bundle being verified.
+
+Receivers use it like this:
+
+```bash
+EXPECTED_PUBKEY_SHA256="<your-fingerprint>" ./runtime/receiver-verify-install.sh
+```
+
+---
+
+### Step 3: Add the keys to GitHub Secrets
 
 Navigate to:
 
 ```
-https://github.com/<org>/skillpack/settings/secrets/actions
+https://github.com/shizlie/skillpack/settings/secrets/actions
 ```
 
 The page has two sections: **Repository secrets** and **Environment secrets**.
 
-Use **Repository secrets** — click the **"New repository secret"** button in that section. It does NOT ask for an environment. If you see an environment dropdown, you clicked the wrong button (Environment secrets section).
+Use **Repository secrets** — click **"New repository secret"** in that section. If you see a dropdown asking for an environment, you clicked the wrong section.
 
-Add two secrets:
+Add two secrets one at a time:
 
-| Secret name | Value |
-|---|---|
-| `LAWS_CONSULTANT_PRIVATE_KEY` | Full contents of `release-private.pem` including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` lines |
-| `LAWS_CONSULTANT_PUBLIC_KEY` | Full contents of `release-public.pem` including the `-----BEGIN PUBLIC KEY-----` and `-----END PUBLIC KEY-----` lines |
+**Secret 1:**
+- Name: `LAWS_CONSULTANT_PRIVATE_KEY`
+- Value: paste the entire contents of `/tmp/release-private.pem`, including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` lines
 
-Delete the local key files after adding them:
+**Secret 2:**
+- Name: `LAWS_CONSULTANT_PUBLIC_KEY`
+- Value: paste the entire contents of `/tmp/release-public.pem`, including the `-----BEGIN PUBLIC KEY-----` and `-----END PUBLIC KEY-----` lines
+
+After both secrets are saved, delete the local files:
 
 ```bash
 rm /tmp/release-private.pem /tmp/release-public.pem
 ```
 
-### Step 3: Record the public key fingerprint
-
-Send this fingerprint to receivers out-of-band (email, signed release notes, portal):
-
-```bash
-shasum -a 256 /tmp/release-public.pem | awk '{print $1}'
-# or after adding secrets, download the public key from any release asset
-```
-
-Receivers use it:
-
-```bash
-EXPECTED_PUBKEY_SHA256="<fingerprint>" ./runtime/receiver-verify-install.sh
-```
+The keys now live only in GitHub Secrets. The CI workflow injects them at build time — they are never written to the repo or exposed in logs.
 
 ---
 
