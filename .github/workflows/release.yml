@@ -31,6 +31,23 @@ jobs:
           PRIVATE_KEY: ${{ secrets.LAWS_CONSULTANT_PRIVATE_KEY }}
           PUBLIC_KEY: ${{ secrets.LAWS_CONSULTANT_PUBLIC_KEY }}
 
+      - name: Write release license template
+        run: |
+          cat > verticals/laws-consultant/distribution/license.dev.json <<'EOF'
+          {
+            "licenseId": "laws-consultant-release-license",
+            "customerId": "demo-customer",
+            "seatId": "default",
+            "bundleId": "laws-consultant",
+            "policy": {
+              "ttlDays": 30,
+              "graceHours": 72,
+              "metering": "required"
+            },
+            "notes": "Default release license. Replace customerId/seatId per-customer when issuing real leases."
+          }
+          EOF
+
       - name: Run tests
         run: bun run test:unit
 
