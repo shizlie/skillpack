@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [0.3.0.0] - 2026-04-20
+
+### Added
+
+- Added `packages/protocol/src/policy.js` — canonical policy engine with `evaluatePolicyDecision`, `evaluateUsageState`, `evaluateTimeState`, `evaluateEffectiveTimeWindow`, and `validatePolicySnapshot`. Exported from `@skillpack/protocol`.
+- Added `evaluatePolicyToolCallDecision` to the runtime — enforces workspace, seat, usage, and time policy at every `tool_call`. Policy snapshot is loaded only after Ed25519 manifest signature verification (`policy.json` must appear in `manifest.files`).
+- Added `POST /v1/policies/issue` and `POST /v1/policies/sync` to the license server — vendors push policy snapshots; receivers pull incremental updates.
+- Added `POST /v1/meter/upload` and `GET /v1/usage/summary` — operators upload batched meter events and query aggregate usage.
+- Added `skillpack policy issue|sync` and `skillpack meter upload|usage summary` CLI commands.
+- Added `verticals/laws-consultant/distribution/policy.dev.json` — dev policy with 500-call budgets for demo workspace.
+- Added `scripts/demo-policy-loop.sh` — deterministic local demo of the full enforcement loop (issue policy → set tight budget → exhaust budget → observe degraded mode → hard stop).
+- Added `docs/runbooks/policy-loop-demo.md` — operator guide for the policy loop demo.
+
+### Changed
+
+- Runtime persists `toolUsageBySeat` to `meter-state.json` so per-seat tool budgets survive server restarts.
+- `bundle-laws-consultant.mjs` now copies `policy.dev.json` into the bundle input directory so policy is covered by the manifest signature.
+- Extended `test-receiver-e2e.sh` with step 6 (meter continuity) and step 6b (tampered-bundle rejection). Fixed duplicate section label 3b→3d.
+- Warning-only degraded mode: `ALLOW_WITH_WARNING` at 100–120% usage, `DENY` beyond 120% (strictly greater).
+
+### Fixed
+
+- Policy snapshot was previously loaded before manifest verification — moved load to after signature check with manifest-entry guard.
+
 ## [0.2.0.0] - 2026-04-19
 
 ### Added

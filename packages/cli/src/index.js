@@ -51,6 +51,37 @@ function parseIntArg(value, fallback) {
   return parsed;
 }
 
+function requireServerUrl(flags) {
+  const serverUrl = normalizeServerUrl(flags["server-url"]);
+  if (!serverUrl) throw new Error("missing_server_url");
+  return serverUrl;
+}
+
+function parseJsonLines(filePath) {
+  const raw = fs.readFileSync(filePath, "utf8");
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+function loadMeterEvents(filePath) {
+  const absolute = path.resolve(filePath);
+  if (!fs.existsSync(absolute)) throw new Error("missing_events_file");
+  const raw = fs.readFileSync(absolute, "utf8");
+  if (!raw.trim()) return [];
+
+  if (absolute.endsWith(".jsonl")) {
+    return parseJsonLines(absolute);
+  }
+
+  const parsed = JSON.parse(raw);
+  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed?.events)) return parsed.events;
+  throw new Error("meter_events_file_invalid_shape");
+}
+
 function sha256Hex(input) {
   const buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
   return crypto.createHash("sha256").update(buf).digest("hex");
@@ -193,6 +224,110 @@ async function latestAttestation(commandArgs, fetchImpl) {
   return { status: response.status, body: await response.json() };
 }
 
+function buildPolicyFromFlags(flags) {
+  const now = parseIntArg(flags["now-sec"], nowSec());
+  const startsAtSec = parseIntArg(flags["starts-at-sec"], now);
+  const expiresAtSec = parseIntArg(flags["expires-at-sec"], now + 3600);
+  const graceUntilSec = parseIntArg(flags["grace-until-sec"], expiresAtSec + 3600);
+  const seatId = flags["seat-id"] ?? "default";
+
+  return {
+    policyVersion: 1,
+    policyId: flags["policy-id"] ?? `policy-${now}`,
+    workspaceId: flags["workspace-id"],
+    workspacePolicy: {
+      mode: flags["workspace-mode"] ?? "ENABLED",
+    },
+    seatPolicy: {
+      defaultMode: flags["seat-default-mode"] ?? "ENABLED",
+      seats: {
+        [seatId]: { mode: flags["seat-mode"] ?? "ENABLED" },
+      },
+    },
+    usagePolicy: {
+      unit: "tool_call",
+      thresholds: {
+        warningPct: parseIntArg(flags["warning-pct"], 100),
+        hardStopPct: parseIntArg(flags["hard-stop-pct"], 120),
+      },
+      toolBudgets: {
+        wiki_search: parseIntArg(flags["budget-wiki-search"], 5),
+      },
+    },
+    timePolicy: {
+      workspace: { startsAtSec, expiresAtSec, graceUntilSec },
+      seatOverrides: {
+        [seatId]: { startsAtSec, expiresAtSec, graceUntilSec },
+      },
+    },
+  };
+}
+
+async function issuePolicy(commandArgs, fetchImpl) {
+  const flags = parseArgMap(commandArgs);
+  const serverUrl = requireServerUrl(flags);
+  const policy = flags["policy-file"]
+    ? readJson(flags["policy-file"], "policy_file")
+    : buildPolicyFromFlags(flags);
+  const response = await fetchImpl(
+    new Request(`${serverUrl}/v1/policies/issue`, {
+      method: "POST",
+      body: JSON.stringify({ policy }),
+    })
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+async function syncPolicy(commandArgs, fetchImpl) {
+  const flags = parseArgMap(commandArgs);
+  const serverUrl = requireServerUrl(flags);
+  if (!flags["workspace-id"]) throw new Error("missing_workspace_id");
+  const response = await fetchImpl(
+    new Request(`${serverUrl}/v1/policies/sync`, {
+      method: "POST",
+      body: JSON.stringify({
+        workspaceId: flags["workspace-id"],
+        policyId: flags["policy-id"],
+      }),
+    })
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+async function uploadMeter(commandArgs, fetchImpl) {
+  const flags = parseArgMap(commandArgs);
+  const serverUrl = requireServerUrl(flags);
+  if (!flags["workspace-id"]) throw new Error("missing_workspace_id");
+  const filePath = flags.file ?? flags["events-file"];
+  if (!filePath) throw new Error("missing_file");
+  const events = loadMeterEvents(filePath);
+  const response = await fetchImpl(
+    new Request(`${serverUrl}/v1/meter/upload`, {
+      method: "POST",
+      body: JSON.stringify({
+        workspaceId: flags["workspace-id"],
+        events,
+      }),
+    })
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+async function usageSummary(commandArgs, fetchImpl) {
+  const flags = parseArgMap(commandArgs);
+  const serverUrl = requireServerUrl(flags);
+  const url = new URL(`${serverUrl}/v1/usage/summary`);
+  if (flags["workspace-id"]) {
+    url.searchParams.set("workspaceId", flags["workspace-id"]);
+  }
+  const response = await fetchImpl(
+    new Request(url.toString(), {
+      method: "GET",
+    })
+  );
+  return { status: response.status, body: await response.json() };
+}
+
 function buildBundle(commandArgs) {
   const flags = parseArgMap(commandArgs);
   const inputDir = flags["input-dir"];
@@ -290,9 +425,17 @@ export async function runSkillpackCli(
       result = await latestAttestation(args.slice(2), fetchImpl);
     } else if (group === "bundle" && action === "build") {
       result = buildBundle(args.slice(2));
+    } else if (group === "policy" && action === "issue") {
+      result = await issuePolicy(args.slice(2), fetchImpl);
+    } else if (group === "policy" && action === "sync") {
+      result = await syncPolicy(args.slice(2), fetchImpl);
+    } else if (group === "meter" && action === "upload") {
+      result = await uploadMeter(args.slice(2), fetchImpl);
+    } else if (group === "usage" && action === "summary") {
+      result = await usageSummary(args.slice(2), fetchImpl);
     } else {
       io.stderr.write(
-        "usage: skillpack license issue|verify ... OR skillpack tsa manual-attest|latest-attestation ... OR skillpack bundle build ...\n"
+        "usage: skillpack license issue|verify ... OR skillpack tsa manual-attest|latest-attestation ... OR skillpack bundle build ... OR skillpack policy issue|sync ... OR skillpack meter upload ... OR skillpack usage summary ...\n"
       );
       return 2;
     }

@@ -101,6 +101,11 @@ fs.writeFileSync(augmentedLicenseFile, JSON.stringify({ ...licenseBase, leaseTok
 const inputDir = path.join(stagingRoot, bundleId);
 fs.mkdirSync(inputDir, { recursive: true });
 fs.copyFileSync(path.join(verticalRoot, "SKILL.md"), path.join(inputDir, "SKILL.md"));
+// policy.json in inputDir → becomes skill/policy.json in bundle → covered by manifest signature
+const policySourceFile = path.join(distributionDir, "policy.dev.json");
+if (fs.existsSync(policySourceFile)) {
+  fs.copyFileSync(policySourceFile, path.join(inputDir, "policy.json"));
+}
 fs.mkdirSync(path.join(inputDir, "knowledge"), { recursive: true });
 const wikiArchive = path.join(inputDir, "knowledge", "wiki.tar.gz");
 const wikiTar = spawnSync(

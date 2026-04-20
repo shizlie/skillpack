@@ -92,6 +92,267 @@ function chainMeterEvent({ prevHash = GENESIS_HASH, seq, at, kind, data }, chain
   return { ...event, hash: toBase64Url(hmac) };
 }
 
+// ── policy (mirrored from @skillpack/protocol policy semantics) ─────────────
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validatePolicyMode(mode, errorCode) {
+  if (mode !== "ENABLED" && mode !== "DISABLED") {
+    throw new Error(errorCode);
+  }
+}
+
+function validatePolicyTimeWindow(window, prefix) {
+  if (!isPlainObject(window)) {
+    throw new Error(`${prefix}_invalid_object`);
+  }
+  const required = ["startsAtSec", "expiresAtSec", "graceUntilSec"];
+  for (const key of required) {
+    if (!Number.isInteger(window[key]) || window[key] <= 0) {
+      throw new Error(`${prefix}_invalid_${key}`);
+    }
+  }
+  if (window.expiresAtSec < window.startsAtSec) {
+    throw new Error(`${prefix}_expires_before_start`);
+  }
+  if (window.graceUntilSec < window.expiresAtSec) {
+    throw new Error(`${prefix}_grace_before_expiry`);
+  }
+  return window;
+}
+
+export function validatePolicySnapshot(policy) {
+  if (!isPlainObject(policy)) throw new Error("policy_snapshot_invalid_object");
+  for (const key of [
+    "policyVersion",
+    "policyId",
+    "workspaceId",
+    "workspacePolicy",
+    "seatPolicy",
+    "usagePolicy",
+    "timePolicy",
+  ]) {
+    if (policy[key] === undefined || policy[key] === null) {
+      throw new Error(`policy_snapshot_missing_${key}`);
+    }
+  }
+  if (!Number.isInteger(policy.policyVersion) || policy.policyVersion <= 0) {
+    throw new Error("policy_snapshot_invalid_version");
+  }
+  if (typeof policy.policyId !== "string" || policy.policyId.length === 0) {
+    throw new Error("policy_snapshot_invalid_policy_id");
+  }
+  if (typeof policy.workspaceId !== "string" || policy.workspaceId.length === 0) {
+    throw new Error("policy_snapshot_invalid_workspace_id");
+  }
+  if (!isPlainObject(policy.workspacePolicy)) {
+    throw new Error("policy_snapshot_invalid_workspace_policy");
+  }
+  validatePolicyMode(
+    policy.workspacePolicy.mode,
+    "policy_snapshot_invalid_workspace_mode"
+  );
+  if (!isPlainObject(policy.seatPolicy)) {
+    throw new Error("policy_snapshot_invalid_seat_policy");
+  }
+  validatePolicyMode(
+    policy.seatPolicy.defaultMode,
+    "policy_snapshot_invalid_seat_default_mode"
+  );
+  if (
+    policy.seatPolicy.seats !== undefined &&
+    !isPlainObject(policy.seatPolicy.seats)
+  ) {
+    throw new Error("policy_snapshot_invalid_seat_overrides");
+  }
+  if (isPlainObject(policy.seatPolicy.seats)) {
+    for (const seat of Object.values(policy.seatPolicy.seats)) {
+      if (!isPlainObject(seat)) {
+        throw new Error("policy_snapshot_invalid_seat_override");
+      }
+      validatePolicyMode(seat.mode, "policy_snapshot_invalid_seat_mode");
+    }
+  }
+
+  if (!isPlainObject(policy.usagePolicy)) {
+    throw new Error("policy_snapshot_invalid_usage_policy");
+  }
+  if (policy.usagePolicy.unit !== "tool_call") {
+    throw new Error("policy_snapshot_invalid_usage_unit");
+  }
+  if (!isPlainObject(policy.usagePolicy.thresholds)) {
+    throw new Error("policy_snapshot_invalid_usage_thresholds");
+  }
+  const warningPct = policy.usagePolicy.thresholds.warningPct;
+  const hardStopPct = policy.usagePolicy.thresholds.hardStopPct;
+  if (!Number.isFinite(warningPct) || warningPct < 0) {
+    throw new Error("policy_snapshot_invalid_warning_pct");
+  }
+  if (!Number.isFinite(hardStopPct) || hardStopPct < 0) {
+    throw new Error("policy_snapshot_invalid_hard_stop_pct");
+  }
+  if (hardStopPct < warningPct) {
+    throw new Error("policy_snapshot_invalid_threshold_order");
+  }
+  if (!isPlainObject(policy.usagePolicy.toolBudgets)) {
+    throw new Error("policy_snapshot_invalid_tool_budgets");
+  }
+  for (const budget of Object.values(policy.usagePolicy.toolBudgets)) {
+    if (!Number.isFinite(budget) || budget <= 0) {
+      throw new Error("policy_snapshot_invalid_tool_budget");
+    }
+  }
+
+  if (!isPlainObject(policy.timePolicy)) {
+    throw new Error("policy_snapshot_invalid_time_policy");
+  }
+  validatePolicyTimeWindow(policy.timePolicy.workspace, "policy_snapshot_workspace");
+  if (
+    policy.timePolicy.seatOverrides !== undefined &&
+    !isPlainObject(policy.timePolicy.seatOverrides)
+  ) {
+    throw new Error("policy_snapshot_invalid_time_seat_overrides");
+  }
+  if (isPlainObject(policy.timePolicy.seatOverrides)) {
+    for (const override of Object.values(policy.timePolicy.seatOverrides)) {
+      validatePolicyTimeWindow(override, "policy_snapshot_seat_window");
+    }
+  }
+  return policy;
+}
+
+export function evaluateEffectiveTimeWindow(workspaceWindow, seatWindow) {
+  validatePolicyTimeWindow(workspaceWindow, "policy_time_workspace");
+  if (seatWindow === undefined || seatWindow === null) {
+    return {
+      startsAtSec: workspaceWindow.startsAtSec,
+      expiresAtSec: workspaceWindow.expiresAtSec,
+      graceUntilSec: workspaceWindow.graceUntilSec,
+    };
+  }
+  validatePolicyTimeWindow(seatWindow, "policy_time_seat");
+  return {
+    startsAtSec: Math.max(workspaceWindow.startsAtSec, seatWindow.startsAtSec),
+    expiresAtSec: Math.min(workspaceWindow.expiresAtSec, seatWindow.expiresAtSec),
+    graceUntilSec: Math.min(workspaceWindow.graceUntilSec, seatWindow.graceUntilSec),
+  };
+}
+
+export function evaluateUsageState({ actual, budget, warningPct = 100, hardStopPct = 120 }) {
+  if (!Number.isFinite(actual) || actual < 0) throw new Error("policy_usage_invalid_actual");
+  if (!Number.isFinite(budget) || budget <= 0) throw new Error("policy_usage_invalid_budget");
+  if (!Number.isFinite(warningPct) || warningPct < 0) {
+    throw new Error("policy_usage_invalid_warning_pct");
+  }
+  if (!Number.isFinite(hardStopPct) || hardStopPct < warningPct) {
+    throw new Error("policy_usage_invalid_hard_stop_pct");
+  }
+  const pct = (actual / budget) * 100;
+  if (pct > hardStopPct) return "HARD_STOP";
+  if (pct >= warningPct) return "WARNING";
+  return "NORMAL";
+}
+
+export function evaluateTimeState({ nowSec, startsAtSec, expiresAtSec, graceUntilSec }) {
+  if (!Number.isInteger(nowSec) || nowSec <= 0) {
+    throw new Error("policy_time_invalid_now");
+  }
+  validatePolicyTimeWindow(
+    { startsAtSec, expiresAtSec, graceUntilSec },
+    "policy_time_window"
+  );
+  if (nowSec < startsAtSec) return "NOT_STARTED";
+  if (nowSec <= expiresAtSec) return "ACTIVE";
+  if (nowSec <= graceUntilSec) return "GRACE";
+  return "EXPIRED";
+}
+
+export function evaluatePolicyDecision({ workspaceMode, seatMode, timeState, usageState }) {
+  if (workspaceMode === "DISABLED") {
+    return { decision: "DENY", reasonCodes: ["workspace_disabled"] };
+  }
+  if (seatMode === "DISABLED") {
+    return { decision: "DENY", reasonCodes: ["seat_disabled"] };
+  }
+  if (timeState === "NOT_STARTED") {
+    return { decision: "DENY", reasonCodes: ["time_not_started"] };
+  }
+  if (timeState === "EXPIRED") {
+    return { decision: "DENY", reasonCodes: ["time_expired"] };
+  }
+  if (usageState === "HARD_STOP") {
+    return { decision: "DENY", reasonCodes: ["usage_hard_stop"] };
+  }
+  const reasonCodes = [];
+  if (timeState === "GRACE") reasonCodes.push("time_grace");
+  if (usageState === "WARNING") reasonCodes.push("usage_warning");
+  if (reasonCodes.length > 0) {
+    return { decision: "ALLOW_WITH_WARNING", reasonCodes };
+  }
+  return { decision: "ALLOW", reasonCodes: [] };
+}
+
+export function evaluatePolicyToolCallDecision({
+  policy,
+  seatId = "default",
+  toolName,
+  currentCount = 0,
+  nowSec = Math.floor(Date.now() / 1000),
+}) {
+  if (!policy) {
+    return {
+      decision: "ALLOW",
+      reasonCodes: [],
+      usageState: "NORMAL",
+      nextCount: currentCount + 1,
+      budget: undefined,
+    };
+  }
+  if (typeof toolName !== "string" || toolName.length === 0) {
+    throw new Error("policy_tool_invalid_name");
+  }
+  if (!Number.isInteger(currentCount) || currentCount < 0) {
+    throw new Error("policy_usage_invalid_actual");
+  }
+  const seatMode = policy.seatPolicy.seats?.[seatId]?.mode ?? policy.seatPolicy.defaultMode;
+  const effectiveWindow = evaluateEffectiveTimeWindow(
+    policy.timePolicy.workspace,
+    policy.timePolicy.seatOverrides?.[seatId]
+  );
+  const timeState = evaluateTimeState({
+    nowSec,
+    startsAtSec: effectiveWindow.startsAtSec,
+    expiresAtSec: effectiveWindow.expiresAtSec,
+    graceUntilSec: effectiveWindow.graceUntilSec,
+  });
+
+  const nextCount = currentCount + 1;
+  const budget = policy.usagePolicy.toolBudgets[toolName];
+  let usageState = "NORMAL";
+  if (Number.isFinite(budget) && budget > 0) {
+    usageState = evaluateUsageState({
+      actual: nextCount,
+      budget,
+      warningPct: policy.usagePolicy.thresholds.warningPct,
+      hardStopPct: policy.usagePolicy.thresholds.hardStopPct,
+    });
+  }
+
+  return {
+    ...evaluatePolicyDecision({
+      workspaceMode: policy.workspacePolicy.mode,
+      seatMode,
+      timeState,
+      usageState,
+    }),
+    usageState,
+    nextCount,
+    budget,
+  };
+}
+
 // ── wiki (inlined from @skillpack/wiki-mcp) ───────────────────────────────────
 
 const DEFAULT_LIMIT = 5;
@@ -163,6 +424,8 @@ function err(id, code, message) { return { jsonrpc: "2.0", id, error: { code, me
 
 // ── startup ───────────────────────────────────────────────────────────────────
 
+if (process.env.SKILLPACK_RUNTIME_SKIP_MAIN !== "1") {
+
 const bundlePath = process.argv[2];
 if (!bundlePath) {
   process.stderr.write("usage: node server.mjs <bundle.mcpb> [pubkey.pem]\n");
@@ -225,6 +488,10 @@ if (!fs.existsSync(licenseJsonPath)) {
   process.exit(1);
 }
 const licenseData = JSON.parse(fs.readFileSync(licenseJsonPath, "utf8"));
+const runtimeSeatId =
+  typeof licenseData.seatId === "string" && licenseData.seatId.length > 0
+    ? licenseData.seatId
+    : "default";
 
 if (!licenseData.leaseToken) {
   fs.rmSync(extractDir, { recursive: true, force: true });
@@ -266,6 +533,22 @@ try {
   fs.rmSync(extractDir, { recursive: true, force: true });
   process.stderr.write("[ERROR] bundle verification failed: " + e.message + "\n");
   process.exit(1);
+}
+
+// Load policy.json only if manifest.files contains skill/policy.json — guarantees signature coverage.
+// Files not listed in manifest.files are intentionally not trusted even if physically present.
+let policySnapshot = null;
+const policyManifestEntry = (manifest.files ?? []).find((f) => f.path === "skill/policy.json");
+if (policyManifestEntry) {
+  try {
+    policySnapshot = validatePolicySnapshot(
+      JSON.parse(fs.readFileSync(path.join(extractDir, "skill", "policy.json"), "utf8"))
+    );
+  } catch (e) {
+    fs.rmSync(extractDir, { recursive: true, force: true });
+    process.stderr.write("[ERROR] policy validation failed: " + e.message + "\n");
+    process.exit(1);
+  }
 }
 
 // Verify lease
@@ -346,6 +629,7 @@ let meterSeq;
 let meterPrevHash;
 let meterConsecutiveFailures = 0;
 const METER_FAILURE_WARN_THRESHOLD = 3;
+const toolUsageBySeat = new Map();
 
 function persistMeterState() {
   try {
@@ -357,6 +641,7 @@ function persistMeterState() {
           seq: meterSeq,
           prevHash: meterPrevHash,
           leaseJti: currentLeaseJti,
+          toolUsageCounts: Object.fromEntries(toolUsageBySeat),
           updatedAt: Math.floor(Date.now() / 1000),
         },
         null,
@@ -384,6 +669,11 @@ function restoreOrCreateMeterState() {
         chainKey = parsed.chainKey;
         meterSeq = parsed.seq;
         meterPrevHash = parsed.prevHash;
+        if (parsed.toolUsageCounts && typeof parsed.toolUsageCounts === "object") {
+          for (const [k, v] of Object.entries(parsed.toolUsageCounts)) {
+            if (typeof v === "number" && v >= 0) toolUsageBySeat.set(k, v);
+          }
+        }
         return parsed.leaseJti && parsed.leaseJti !== currentLeaseJti;
       }
     }
@@ -417,6 +707,24 @@ function appendMeterEvent(kind, data = {}) {
   meterSeq++;
   persistMeterState();
   return event;
+}
+
+function getToolUsageCount(seatId, toolName) {
+  return toolUsageBySeat.get(`${seatId}::${toolName}`) ?? 0;
+}
+
+function incrementToolUsageCount(seatId, toolName) {
+  const key = `${seatId}::${toolName}`;
+  toolUsageBySeat.set(key, getToolUsageCount(seatId, toolName) + 1);
+}
+
+function evaluatePolicyForToolCall({ policy, seatId, toolName }) {
+  return evaluatePolicyToolCallDecision({
+    policy,
+    seatId,
+    toolName,
+    currentCount: getToolUsageCount(seatId, toolName),
+  });
 }
 
 const leaseChangedSinceLastSession = restoreOrCreateMeterState();
@@ -497,19 +805,85 @@ rl.on("line", (line) => {
         return;
       }
 
-      appendMeterEvent("tool_call", { tool: toolName });
+      const policyDecision = evaluatePolicyForToolCall({
+        policy: policySnapshot,
+        seatId: runtimeSeatId,
+        toolName,
+      });
+
+      if (policyDecision.decision === "DENY") {
+        appendMeterEvent("tool_denied", {
+          tool: toolName,
+          seatId: runtimeSeatId,
+          policyId: policySnapshot?.policyId,
+          decision: policyDecision.decision,
+          reasonCodes: policyDecision.reasonCodes,
+        });
+        response = err(
+          id,
+          -32603,
+          "policy_denied: " + policyDecision.reasonCodes.join(",")
+        );
+        process.stdout.write(JSON.stringify(response) + "\n");
+        return;
+      }
+
+      appendMeterEvent("tool_call", {
+        tool: toolName,
+        seatId: runtimeSeatId,
+        policyId: policySnapshot?.policyId,
+        decision: policyDecision.decision,
+        reasonCodes: policyDecision.reasonCodes,
+        usageUnit: "tool_call",
+        usageDelta: 1,
+      });
+      incrementToolUsageCount(runtimeSeatId, toolName);
 
       if (toolName === "wiki_search") {
         const results = wiki.search(args.query, args.limit);
-        const text = results.length === 0
+        const bodyText = results.length === 0
           ? "No wiki matches found."
           : results.map((r, i) => `${i + 1}. ${r.page} (score=${r.score})\n${r.snippet}`).join("\n\n");
+        const warningText = policyDecision.decision === "ALLOW_WITH_WARNING"
+          ? `[POLICY WARNING] ${policyDecision.reasonCodes.join(", ")}`
+          : null;
+        const text = warningText ? `${warningText}\n${bodyText}` : bodyText;
         appendMeterEvent("tool_success", { tool: toolName, resultCount: results.length });
-        response = ok(id, { content: [{ type: "text", text }], isError: false });
+        response = ok(id, {
+          content: [{ type: "text", text }],
+          isError: false,
+          metadata:
+            policyDecision.decision === "ALLOW_WITH_WARNING"
+              ? {
+                  policy: {
+                    decision: policyDecision.decision,
+                    reasonCodes: policyDecision.reasonCodes,
+                    policyId: policySnapshot?.policyId,
+                  },
+                }
+              : undefined,
+        });
       } else if (toolName === "wiki_read_page") {
-        const text = wiki.readPage(args.page);
+        const bodyText = wiki.readPage(args.page);
+        const warningText = policyDecision.decision === "ALLOW_WITH_WARNING"
+          ? `[POLICY WARNING] ${policyDecision.reasonCodes.join(", ")}`
+          : null;
+        const text = warningText ? `${warningText}\n${bodyText}` : bodyText;
         appendMeterEvent("tool_success", { tool: toolName, page: args.page });
-        response = ok(id, { content: [{ type: "text", text }], isError: false });
+        response = ok(id, {
+          content: [{ type: "text", text }],
+          isError: false,
+          metadata:
+            policyDecision.decision === "ALLOW_WITH_WARNING"
+              ? {
+                  policy: {
+                    decision: policyDecision.decision,
+                    reasonCodes: policyDecision.reasonCodes,
+                    policyId: policySnapshot?.policyId,
+                  },
+                }
+              : undefined,
+        });
       } else {
         appendMeterEvent("tool_unknown", { tool: toolName });
         response = err(id, -32602, "unknown_tool: " + toolName);
@@ -557,3 +931,4 @@ rl.on("close", () => {
 });
 
 process.stderr.write("[skillpack] laws-consultant wiki MCP server ready (lease mode: " + leaseResult.mode + ")\n");
+}
