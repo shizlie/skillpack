@@ -158,14 +158,21 @@ const releaseServerScript = path.join(releaseRuntimeDir, "server.mjs");
 fs.copyFileSync(serverMjsSource, releaseServerScript);
 fs.chmodSync(releaseServerScript, 0o755);
 
+const serverUtilMjsSource = path.join(repoRoot, "packages", "runtime", "src", "server-util.mjs");
+const releaseServerUtilScript = path.join(releaseRuntimeDir, "server-util.mjs");
+fs.copyFileSync(serverUtilMjsSource, releaseServerUtilScript);
+fs.chmodSync(releaseServerUtilScript, 0o755);
+
 const bundleSha = sha256Hex(releaseBundleFile);
 const pubKeySha = sha256Hex(releasePublicKeyFile);
 const serverMjsSha = sha256Hex(releaseServerScript);
+const serverUtilMjsSha = sha256Hex(releaseServerUtilScript);
 fs.writeFileSync(
   releaseChecksumsFile,
   `${bundleSha}  ${path.basename(releaseBundleFile)}\n` +
   `${pubKeySha}  ${path.basename(releasePublicKeyFile)}\n` +
-  `${serverMjsSha}  runtime/server.mjs\n`
+  `${serverMjsSha}  runtime/server.mjs\n` +
+  `${serverUtilMjsSha}  runtime/server-util.mjs\n`
 );
 
 const verifyScript = `#!/usr/bin/env node
@@ -296,8 +303,26 @@ set -euo pipefail
 BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$BASE_DIR"
 
-command -v node >/dev/null 2>&1 || { echo "[ERROR] node not found. Install Node.js >= 14 before proceeding." >&2; exit 1; }
+if ! command -v node >/dev/null 2>&1; then
+  echo "[ERROR] node not found. Install Node.js >= 15 before proceeding." >&2
+  echo "Install options:" >&2
+  echo "  macOS (Homebrew): brew install node@20" >&2
+  echo "  Ubuntu/Debian:    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs" >&2
+  echo "  Any OS (nvm):     nvm install 20 && nvm use 20" >&2
+  exit 1
+fi
+NODE_MAJOR="$(node -p 'Number(process.versions.node.split(\".\")[0])' 2>/dev/null || echo 0)"
+if [ "$NODE_MAJOR" -lt 15 ]; then
+  echo "[ERROR] Node.js >= 15 required. Found: $(node --version)" >&2
+  echo "Install/upgrade Node and rerun this script." >&2
+  echo "  macOS (Homebrew): brew install node@20" >&2
+  echo "  Ubuntu/Debian:    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs" >&2
+  echo "  Any OS (nvm):     nvm install 20 && nvm use 20" >&2
+  exit 1
+fi
 command -v rsync >/dev/null 2>&1 || { echo "[ERROR] rsync not found. Install rsync before proceeding." >&2; exit 1; }
+command -v unzip >/dev/null 2>&1 || { echo "[ERROR] unzip not found. Install unzip before proceeding." >&2; exit 1; }
+command -v shasum >/dev/null 2>&1 || { echo "[ERROR] shasum not found. Install Perl coreutils package before proceeding." >&2; exit 1; }
 
 BUNDLE_FILE="${bundleId}-${version}.mcpb"
 PUBKEY_FILE="${bundleId}-${version}.public.pem"
@@ -352,6 +377,7 @@ mkdir -p "$BUNDLE_DEST"
 cp "$BUNDLE_FILE" "$BUNDLE_DEST/"
 cp "$PUBKEY_FILE" "$BUNDLE_DEST/"
 cp runtime/server.mjs "$BUNDLE_DEST/"
+cp runtime/server-util.mjs "$BUNDLE_DEST/"
 
 echo "installed skill:      ${'$'}SKILL_DEST"
 echo "staged sealed bundle: ${'$'}BUNDLE_DEST/${'$'}BUNDLE_FILE"

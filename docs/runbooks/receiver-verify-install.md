@@ -124,7 +124,7 @@ To test Node version guard (should fail):
 FROM node:14-slim   # too old
 ```
 
-Expected: `verify-bundle.mjs requires Node.js >= 15 (crypto.verify Ed25519 support). Found: v14.x.x`
+Expected: receiver preflight fails early with `Node.js >= 15 required. Found: v14.x.x`.
 
 ---
 
@@ -210,12 +210,14 @@ Then use that value (no `~`) in the `args` array.
 What the server does on startup:
 
 1. Extracts `.mcpb` to a `chmod 700` temp dir
-2. Reads `license.json` → verifies the Ed25519 lease token against the vendor public key
-3. Extracts `knowledge/wiki.tar.gz` to a second `chmod 700` temp dir
-4. Starts a JSON-RPC 2.0 MCP server on stdio
-5. Verifies the lease again on every `tools/call` (catches mid-session expiry)
-6. Appends an HMAC-chained meter event to `~/.skillpack/bundles/laws-consultant/meter.jsonl` per call
-7. Cleans up both temp dirs on exit
+2. Verifies bundle integrity and authenticity (`manifest.sha256`, `signature.bin`, and manifest file hashes)
+3. Reads `license.json` → verifies the Ed25519 lease token against the vendor public key
+4. Extracts `knowledge/wiki.tar.gz` to a second `chmod 700` temp dir
+5. Starts a JSON-RPC 2.0 MCP server on stdio
+6. Verifies the lease again on every `tools/call` (catches mid-session expiry)
+7. Appends an HMAC-chained meter event to `~/.skillpack/bundles/laws-consultant/meter.jsonl` per call
+8. Persists meter chain state to `~/.skillpack/bundles/laws-consultant/meter-state.json` so sequence/hash continuity survives restarts
+9. Cleans up both temp dirs on exit
 
 Server startup message (goes to stderr, not visible in Claude Code):
 
@@ -276,6 +278,7 @@ The skill instructs Claude to ground each claim in wiki evidence. With the MCP s
 - Do not ship or install raw wiki markdown pages — wiki content is sealed inside the bundle.
 - Use `EXPECTED_PUBKEY_SHA256` in regulated environments. Without it the trust root is the tarball.
 - The `meter.jsonl` file is append-only. Do not delete it between sessions.
+- The `meter-state.json` file stores chain continuity metadata. Do not modify it manually.
 
 ## Optional destination overrides
 

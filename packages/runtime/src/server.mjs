@@ -14,32 +14,14 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import readline from "node:readline";
-
-// ── base64url ────────────────────────────────────────────────────────────────
-
-function toBase64Url(input) {
-  const buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
-  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function fromBase64Url(value) {
-  const padded = value + "===".slice((value.length + 3) % 4);
-  return Buffer.from(padded.replace(/-/g, "+").replace(/_/g, "/"), "base64");
-}
-
-// ── canonical JSON ───────────────────────────────────────────────────────────
-
-function sortJson(value) {
-  if (Array.isArray(value)) return value.map(sortJson);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((k) => [k, sortJson(value[k])]));
-  }
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(sortJson(value));
-}
+import {
+  toBase64Url,
+  fromBase64Url,
+  sha256Hex,
+  canonicalJson,
+  isUnsafeArchivePath,
+  ensureSafePathWithin,
+} from "./server-util.mjs";
 
 // ── lease verification (inlined from @skillpack/runtime + @skillpack/crypto) ─
 
@@ -221,7 +203,7 @@ if (listResult.status !== 0) {
 for (const line of (listResult.stdout || "").split("\n").slice(3)) {
   const name = line.trim().split(/\s+/).slice(3).join(" ");
   if (!name || name === "---" || name === "Name") continue;
-  if (name.startsWith("/") || name.includes("../")) {
+  if (isUnsafeArchivePath(name)) {
     fs.rmSync(extractDir, { recursive: true, force: true });
     process.stderr.write("[ERROR] zip path traversal detected: " + name + "\n");
     process.exit(1);
@@ -250,6 +232,42 @@ if (!licenseData.leaseToken) {
   process.exit(1);
 }
 
+// Verify manifest hash + signature + file hashes before serving any content
+// `manifest` is declared here so the verified object is reused downstream — avoid re-reading from disk.
+let manifest;
+try {
+  const manifestPath = path.join(extractDir, "manifest.json");
+  const manifestRaw = fs.readFileSync(manifestPath, "utf8");
+  manifest = JSON.parse(manifestRaw);
+  const manifestCanonical = canonicalJson(manifest);
+  const expectedManifestSha = fs.readFileSync(path.join(extractDir, "manifest.sha256"), "utf8").trim();
+  const actualManifestSha = sha256Hex(manifestCanonical);
+  if (expectedManifestSha !== actualManifestSha) {
+    throw new Error("manifest_sha_mismatch");
+  }
+
+  const signatureB64Url = fs.readFileSync(path.join(extractDir, "signature.bin"), "utf8").trim();
+  const verified = crypto.verify(null, Buffer.from(manifestCanonical), publicKeyPem, fromBase64Url(signatureB64Url));
+  if (!verified) {
+    throw new Error("manifest_signature_invalid");
+  }
+
+  for (const file of manifest.files ?? []) {
+    if (!file || typeof file.path !== "string") {
+      throw new Error("manifest_file_invalid_path");
+    }
+    const filePath = ensureSafePathWithin(extractDir, file.path, "manifest_file");
+    if (!fs.existsSync(filePath)) throw new Error("manifest_file_missing:" + file.path);
+    const bytes = fs.readFileSync(filePath);
+    if (bytes.length !== file.size) throw new Error("manifest_size_mismatch:" + file.path);
+    if (sha256Hex(bytes) !== file.sha256) throw new Error("manifest_hash_mismatch:" + file.path);
+  }
+} catch (e) {
+  fs.rmSync(extractDir, { recursive: true, force: true });
+  process.stderr.write("[ERROR] bundle verification failed: " + e.message + "\n");
+  process.exit(1);
+}
+
 // Verify lease
 let leaseResult;
 try {
@@ -264,9 +282,6 @@ if (leaseResult.mode === "grace") {
   process.stderr.write("[WARNING] lease is in grace period — renew soon to avoid service interruption\n");
 }
 
-// Find bundleId from manifest
-const manifestPath = path.join(extractDir, "manifest.json");
-const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const bundleId = manifest.bundleId;
 
 // Extract wiki.tar.gz to secure temp dir
@@ -280,6 +295,23 @@ if (!fs.existsSync(wikiArchivePath)) {
   fs.rmSync(wikiExtractDir, { recursive: true, force: true });
   process.stderr.write("[ERROR] wiki archive missing from bundle at: skill/knowledge/wiki.tar.gz\n");
   process.exit(1);
+}
+
+// Pre-check all tar entries for path traversal before extracting.
+const tarListResult = spawnSync("tar", ["-tzf", wikiArchivePath], { encoding: "utf8" });
+if (tarListResult.status !== 0) {
+  fs.rmSync(extractDir, { recursive: true, force: true });
+  fs.rmSync(wikiExtractDir, { recursive: true, force: true });
+  process.stderr.write("[ERROR] failed to list wiki archive entries: " + (tarListResult.stderr || "") + "\n");
+  process.exit(1);
+}
+for (const entry of (tarListResult.stdout || "").split("\n").filter(Boolean)) {
+  if (isUnsafeArchivePath(entry)) {
+    fs.rmSync(extractDir, { recursive: true, force: true });
+    fs.rmSync(wikiExtractDir, { recursive: true, force: true });
+    process.stderr.write("[ERROR] tar path traversal detected in wiki archive: " + entry + "\n");
+    process.exit(1);
+  }
 }
 
 const tarResult = spawnSync("tar", ["-xzf", wikiArchivePath, "-C", wikiExtractDir], { encoding: "utf8" });
@@ -306,22 +338,90 @@ const wiki = createWikiRepository(wikiDir);
 
 // ── meter setup ───────────────────────────────────────────────────────────────
 
-const chainKey = toBase64Url(crypto.randomBytes(32));
-let meterSeq = 0;
-let meterPrevHash = GENESIS_HASH;
 const meterLogPath = path.join(bundleDir, "meter.jsonl");
+const meterStatePath = path.join(bundleDir, "meter-state.json");
+const currentLeaseJti = leaseResult.payload.jti;
+let chainKey;
+let meterSeq;
+let meterPrevHash;
+let meterConsecutiveFailures = 0;
+const METER_FAILURE_WARN_THRESHOLD = 3;
+
+function persistMeterState() {
+  try {
+    fs.writeFileSync(
+      meterStatePath,
+      JSON.stringify(
+        {
+          chainKey,
+          seq: meterSeq,
+          prevHash: meterPrevHash,
+          leaseJti: currentLeaseJti,
+          updatedAt: Math.floor(Date.now() / 1000),
+        },
+        null,
+        2
+      ) + "\n",
+      { mode: 0o600 }
+    );
+  } catch {
+    // non-fatal
+  }
+}
+
+function restoreOrCreateMeterState() {
+  try {
+    if (fs.existsSync(meterStatePath)) {
+      const parsed = JSON.parse(fs.readFileSync(meterStatePath, "utf8"));
+      if (
+        typeof parsed.chainKey === "string" &&
+        parsed.chainKey.length > 0 &&
+        Number.isInteger(parsed.seq) &&
+        parsed.seq >= 0 &&
+        typeof parsed.prevHash === "string" &&
+        parsed.prevHash.length > 0
+      ) {
+        chainKey = parsed.chainKey;
+        meterSeq = parsed.seq;
+        meterPrevHash = parsed.prevHash;
+        return parsed.leaseJti && parsed.leaseJti !== currentLeaseJti;
+      }
+    }
+  } catch {
+    // ignore corrupted state and rotate to a fresh chain state
+  }
+  chainKey = toBase64Url(crypto.randomBytes(32));
+  meterSeq = 0;
+  meterPrevHash = GENESIS_HASH;
+  persistMeterState();
+  return false;
+}
 
 function appendMeterEvent(kind, data = {}) {
   const at = Math.floor(Date.now() / 1000);
   const event = chainMeterEvent({ prevHash: meterPrevHash, seq: meterSeq, at, kind, data }, chainKey);
-  meterPrevHash = event.hash;
-  meterSeq++;
   try {
     fs.appendFileSync(meterLogPath, JSON.stringify(event) + "\n");
   } catch {
-    // non-fatal: meter write failure should not stop the server
+    meterConsecutiveFailures++;
+    if (meterConsecutiveFailures >= METER_FAILURE_WARN_THRESHOLD) {
+      process.stderr.write(
+        "[WARN] meter write failed " + meterConsecutiveFailures + " consecutive times — " +
+        "check disk space and permissions at " + meterLogPath + "\n"
+      );
+    }
+    return null;
   }
+  meterConsecutiveFailures = 0;
+  meterPrevHash = event.hash;
+  meterSeq++;
+  persistMeterState();
   return event;
+}
+
+const leaseChangedSinceLastSession = restoreOrCreateMeterState();
+if (leaseChangedSinceLastSession) {
+  appendMeterEvent("lease_refreshed", { jti: currentLeaseJti });
 }
 
 // Log session start

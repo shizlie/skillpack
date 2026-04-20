@@ -193,9 +193,63 @@ else
   fail "current node $(node --version) < 15 — verify-bundle.mjs will reject it"
 fi
 
-# ── step 6: docker fresh machine (optional) ───────────────────────────────────
+# ── step 6: runtime startup verification + meter continuity ───────────────────
 
-section "6. Docker fresh machine (optional)"
+section "6. Runtime startup verification + meter continuity"
+
+RECV=$(fresh_receiver_dir)
+(
+  extract_in "${RECV}"
+  SKILL_DEST_ROOT="${RECV}/skills" BUNDLE_DEST_ROOT="${RECV}/bundles" \
+    ./runtime/receiver-verify-install.sh >/dev/null
+
+  BUNDLE_STAGE="${RECV}/bundles/laws-consultant"
+  SERVER_PATH="${BUNDLE_STAGE}/server.mjs"
+  BUNDLE_PATH="${BUNDLE_STAGE}/${BUNDLE_NAME}.mcpb"
+  METER_STATE="${BUNDLE_STAGE}/meter-state.json"
+  METER_LOG="${BUNDLE_STAGE}/meter.jsonl"
+
+  # First start: should create meter state/log
+  node "${SERVER_PATH}" "${BUNDLE_PATH}" < /dev/null >/dev/null 2>&1
+  [ -f "${METER_STATE}" ] && pass "meter-state.json created after server start" || fail "meter-state.json missing after server start"
+  [ -f "${METER_LOG}" ] && pass "meter.jsonl created after server start" || fail "meter.jsonl missing after server start"
+
+  SEQ1=$(node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); console.log(p.seq);' "${METER_STATE}")
+
+  # Second start: seq must advance (continuity across restarts)
+  node "${SERVER_PATH}" "${BUNDLE_PATH}" < /dev/null >/dev/null 2>&1
+  SEQ2=$(node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); console.log(p.seq);' "${METER_STATE}")
+  [ "${SEQ2}" -gt "${SEQ1}" ] && pass "meter sequence advances across restarts" || fail "meter sequence did not advance across restarts"
+)
+rm -rf "${RECV}"
+
+RECV=$(fresh_receiver_dir)
+(
+  extract_in "${RECV}"
+  SKILL_DEST_ROOT="${RECV}/skills" BUNDLE_DEST_ROOT="${RECV}/bundles" \
+    ./runtime/receiver-verify-install.sh >/dev/null
+
+  BUNDLE_STAGE="${RECV}/bundles/laws-consultant"
+  SERVER_PATH="${BUNDLE_STAGE}/server.mjs"
+  BUNDLE_PATH="${BUNDLE_STAGE}/${BUNDLE_NAME}.mcpb"
+  TAMPER_DIR=$(mktemp -d)
+
+  unzip -q "${BUNDLE_PATH}" -d "${TAMPER_DIR}"
+  echo '{"bundleId":"tampered"}' > "${TAMPER_DIR}/manifest.json"
+  (cd "${TAMPER_DIR}" && zip -qr "${BUNDLE_PATH}" .) || { echo "[ERROR] zip repack failed — cannot run tamper test"; rm -rf "${TAMPER_DIR}"; exit 1; }
+  rm -rf "${TAMPER_DIR}"
+
+  set +e
+  node "${SERVER_PATH}" "${BUNDLE_PATH}" < /dev/null >/dev/null 2>&1
+  STATUS=$?
+  set -e
+  [ "${STATUS}" -ne 0 ]
+) && pass "runtime server rejects tampered bundle at startup" || fail "runtime server should reject tampered bundle at startup"
+rm -rf "${RECV}"
+
+# ── step 7: docker fresh machine (optional) ───────────────────────────────────
+
+section "7. Docker fresh machine (optional)"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "  SKIP: docker not available"
