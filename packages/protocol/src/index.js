@@ -126,3 +126,5 @@ export const protocolInternals = {
   DEFAULT_TSA_MAX_TOKEN_AGE_SEC,
   DEFAULT_TSA_WARNING_WINDOW_SEC,
 };
+
+export * from "./policy.js";
