@@ -160,7 +160,7 @@ RECV=$(fresh_receiver_dir)
 ) && pass "tampered manifest rejected by signature check" || fail "tampered manifest should fail signature"
 rm -rf "${RECV}"
 
-# 3b: missing bundle file
+# 3d: missing bundle file
 RECV=$(fresh_receiver_dir)
 (
   extract_in "${RECV}"

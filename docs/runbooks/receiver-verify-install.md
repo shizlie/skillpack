@@ -258,6 +258,18 @@ claude
 
 Then in Claude Code:
 
+---
+
+## Policy loop reference
+
+For policy enforcement verification (`issue -> use -> warn -> stop -> renew -> continue`), run:
+
+```bash
+./scripts/demo-policy-loop.sh
+```
+
+The demo is deterministic and local. It also demonstrates warning-only degradation at 100%-120% usage before hard stop beyond 120%. Full steps: `docs/runbooks/policy-loop-demo.md`.
+
 ```
 /laws-consultant
 ```
