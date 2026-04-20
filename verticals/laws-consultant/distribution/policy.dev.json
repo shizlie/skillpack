@@ -1,0 +1,32 @@
+{
+  "policyVersion": 1,
+  "policyId": "policy-laws-consultant-dev-001",
+  "workspaceId": "demo-customer",
+  "workspacePolicy": {
+    "mode": "ENABLED"
+  },
+  "seatPolicy": {
+    "defaultMode": "ENABLED",
+    "seats": {
+      "default": { "mode": "ENABLED" }
+    }
+  },
+  "usagePolicy": {
+    "unit": "tool_call",
+    "thresholds": {
+      "warningPct": 100,
+      "hardStopPct": 120
+    },
+    "toolBudgets": {
+      "wiki_search": 500,
+      "wiki_read_page": 500
+    }
+  },
+  "timePolicy": {
+    "workspace": {
+      "startsAtSec": 1000000000,
+      "expiresAtSec": 9999999999,
+      "graceUntilSec": 9999999999
+    }
+  }
+}
