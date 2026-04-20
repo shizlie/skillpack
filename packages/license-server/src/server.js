@@ -5,7 +5,11 @@ import {
   createLeaseToken,
   verifyLeaseToken,
 } from "@skillpack/crypto";
-import { validateLeasePayload } from "@skillpack/protocol";
+import {
+  validateLeasePayload,
+  validateMeterEvent,
+  validatePolicySnapshot,
+} from "@skillpack/protocol";
 import { createManualTimeAttestationContract, createTsaMonitor } from "@skillpack/tsa";
 import { createInMemoryLeaseStore } from "./storage.js";
 
@@ -32,6 +36,14 @@ function getRequiredString(body, key, errorCode) {
     throw new Error(errorCode);
   }
   return value;
+}
+
+function getStoreMethod(leaseStore, methodName) {
+  const method = leaseStore?.[methodName];
+  if (typeof method !== "function") {
+    throw new Error(`lease_store_missing_${methodName}`);
+  }
+  return method.bind(leaseStore);
 }
 
 export function createLicenseFetchHandler({
@@ -129,6 +141,112 @@ export function createLicenseFetchHandler({
         return json({ valid: true, payload: verified });
       } catch (error) {
         return json({ valid: false, error: error.message }, 400);
+      }
+    }
+
+    // TODO(auth): /v1/policies/* and /v1/meter/* require authentication before any non-pilot deployment.
+    // Add pre-shared API key (X-Api-Key header) or mTLS before exposing to untrusted networks.
+    // Without auth, any caller who can reach the server can overwrite policies or submit fake meter events.
+    if (request.method === "POST" && url.pathname === "/v1/policies/issue") {
+      try {
+        const body = await readBody(request);
+        const snapshot = validatePolicySnapshot(body.policy ?? body);
+        const savePolicySnapshot = getStoreMethod(leaseStore, "savePolicySnapshot");
+        const saved = savePolicySnapshot(snapshot.workspaceId, snapshot);
+        return json({ accepted: true, policy: saved });
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 400);
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/policies/sync") {
+      try {
+        const body = await readBody(request);
+        const workspaceId = getRequiredString(
+          body,
+          "workspaceId",
+          "policy_sync_missing_workspace_id"
+        );
+        const policyId =
+          typeof body.policyId === "string" && body.policyId.length > 0
+            ? body.policyId
+            : null;
+        const getLatestPolicySnapshot = getStoreMethod(
+          leaseStore,
+          "getLatestPolicySnapshot"
+        );
+        const latest = getLatestPolicySnapshot(workspaceId);
+        if (!latest) {
+          return json({ notModified: true });
+        }
+        if (policyId && latest.policyId === policyId) {
+          return json({ notModified: true });
+        }
+        return json({ notModified: false, policy: latest });
+      } catch (error) {
+        return json({ error: error.message }, 400);
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/meter/upload") {
+      try {
+        const body = await readBody(request);
+        const workspaceId = getRequiredString(
+          body,
+          "workspaceId",
+          "meter_upload_missing_workspace_id"
+        );
+        if (!Array.isArray(body.events)) {
+          throw new Error("meter_upload_missing_events");
+        }
+        const validated = body.events.map((event) => {
+          validateMeterEvent(event);
+          if (typeof event.seatId !== "string" || event.seatId.length === 0) {
+            throw new Error("meter_event_invalid_seat_id");
+          }
+          if (typeof event.tool !== "string" || event.tool.length === 0) {
+            throw new Error("meter_event_invalid_tool");
+          }
+          const usage = event.usage ?? { unit: event.unit, delta: event.delta };
+          if (usage?.unit !== "tool_call") {
+            throw new Error("meter_event_invalid_usage_unit");
+          }
+          if (!Number.isFinite(usage?.delta) || usage.delta <= 0) {
+            throw new Error("meter_event_invalid_usage_delta");
+          }
+          return { ...event, usage };
+        });
+
+        const appendMeterEvents = getStoreMethod(leaseStore, "appendMeterEvents");
+        appendMeterEvents(workspaceId, validated);
+
+        let seqStart = null;
+        let seqEnd = null;
+        for (const event of validated) {
+          if (!Number.isInteger(event.seq)) continue;
+          if (seqStart === null || event.seq < seqStart) seqStart = event.seq;
+          if (seqEnd === null || event.seq > seqEnd) seqEnd = event.seq;
+        }
+        return json({
+          accepted: true,
+          ack: {
+            count: validated.length,
+            range: seqStart === null ? null : { seqStart, seqEnd },
+          },
+        });
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 400);
+      }
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/usage/summary") {
+      try {
+        const workspaceId = url.searchParams.get("workspaceId") ?? undefined;
+        const getUsageSummary = getStoreMethod(leaseStore, "getUsageSummary");
+        const summary = getUsageSummary({ workspaceId });
+        return json({ summary });
+      } catch (error) {
+        return json({ error: error.message }, 400);
       }
     }
 
