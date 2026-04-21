@@ -26,13 +26,23 @@ describe("chunker", () => {
     expect(first).toBe(second);
   });
 
-  test("chunk IDs ignore ordinal position", () => {
-    const firstDoc = "# A\nsame\n# B\ncontent";
-    const secondDoc = "# A\nsame\n# X\nother\n# B\ncontent";
+  test("chunk IDs differ for repeated normalized text in the same heading path", () => {
+    const md = "# Title\nsame text\nsame text";
+    const chunks = chunkMarkdown("docs/runbook.md", md, 10);
 
-    const first = chunkMarkdown("a.md", firstDoc, 500)[1].chunkId;
-    const second = chunkMarkdown("a.md", secondDoc, 500)[2].chunkId;
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0].headingPath).toBe("Title");
+    expect(chunks[1].headingPath).toBe("Title");
+    expect(chunks[0].chunkId).not.toBe(chunks[1].chunkId);
+  });
 
-    expect(first).toBe(second);
+  test("single long lines stay isolated even when longer than maxChars", () => {
+    const md = "# Title\nshort\n" + "x".repeat(32) + "\nend";
+    const chunks = chunkMarkdown("docs/runbook.md", md, 8);
+
+    expect(chunks).toHaveLength(3);
+    expect(chunks[1].text).toBe("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+    expect(chunks[1].text.length).toBeGreaterThan(8);
+    expect(chunks[2].text).toBe("end");
   });
 });
