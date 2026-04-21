@@ -1,6 +1,6 @@
 # CI Release Workflow
 
-Automated release pipeline for `.mcpb` bundle artifacts via GitHub Actions.
+Automated release pipeline for `.mcpb` bundle + CLI/runtime distributable artifacts via GitHub Actions.
 
 ---
 
@@ -12,9 +12,26 @@ Trigger: push a version tag (`v*`). The workflow:
 2. Runs `bun test:unit` (gate — no release on test failure)
 3. Runs `bun run bundle:laws-consultant` to produce the `.mcpb`, release folder, and tarball
 4. Extracts the changelog entry for the version from `CHANGELOG.md`
-5. Creates a GitHub Release with the tarball and `.sha256` sidecar as assets
+5. Builds standalone Linux x64 binaries for `skillpack` CLI + runtime server
+6. Builds source tarballs for CLI (with dependency closure) + runtime
+7. Generates SHA-256 checksum files for all new distributable artifacts
+8. Creates a GitHub Release with bundle, CLI/runtime binaries, source tarballs, and checksum assets
 
 Receivers download from the release page and verify with the pinned public key fingerprint.
+
+Published release assets now include:
+
+- `laws-consultant-<version>-bundle.tar.gz`
+- `laws-consultant-<version>-bundle.tar.gz.sha256`
+- `laws-consultant-<version>.public.pem`
+- `skillpack-cli-<version>-linux-x64`
+- `skillpack-cli-<version>-linux-x64.sha256`
+- `skillpack-runtime-<version>-linux-x64`
+- `skillpack-runtime-<version>-linux-x64.sha256`
+- `skillpack-cli-<version>-source.tar.gz`
+- `skillpack-cli-<version>-source.tar.gz.sha256`
+- `skillpack-runtime-<version>-source.tar.gz`
+- `skillpack-runtime-<version>-source.tar.gz.sha256`
 
 ---
 
@@ -229,6 +246,27 @@ Release assets appear at:
 
 ```
 https://github.com/<org>/skillpack/releases/tag/v<version>
+```
+
+### Quick verification for CLI/runtime artifacts
+
+After downloading release assets:
+
+```bash
+sha256sum -c skillpack-cli-<version>-linux-x64.sha256
+sha256sum -c skillpack-runtime-<version>-linux-x64.sha256
+sha256sum -c skillpack-cli-<version>-source.tar.gz.sha256
+sha256sum -c skillpack-runtime-<version>-source.tar.gz.sha256
+```
+
+Run binaries:
+
+```bash
+chmod +x skillpack-cli-<version>-linux-x64
+./skillpack-cli-<version>-linux-x64 --help
+
+chmod +x skillpack-runtime-<version>-linux-x64
+./skillpack-runtime-<version>-linux-x64 <bundle.mcpb> <bundle.public.pem>
 ```
 
 ---
