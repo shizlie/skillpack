@@ -64,4 +64,21 @@ describe("indexer", () => {
     expect(() => searchLexical(db, '"')).not.toThrow();
     expect(searchLexical(db, '"')).toEqual([]);
   });
+
+  test("searchLexical falls back to sanitized tokens for punctuation-heavy queries", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-rag-sanitize-"));
+    fs.writeFileSync(
+      path.join(root, "policy.md"),
+      "# Policy\nfoo-bar rollout policy: escalate to compliance.",
+      "utf8",
+    );
+
+    const db = new Database(":memory:");
+    ensureSchema(db);
+
+    await indexMarkdownDir(db, root);
+
+    expect(searchLexical(db, "foo-bar").map((hit) => hit.path)).toEqual(["policy.md"]);
+    expect(searchLexical(db, "policy:").map((hit) => hit.path)).toEqual(["policy.md"]);
+  });
 });

@@ -12,6 +12,14 @@ export type SearchHit = {
   text: string;
 };
 
+const FTS_MATCH_ERROR_PATTERNS = [
+  "fts5:",
+  "unterminated string",
+  "syntax error",
+  "no such column",
+  "malformed match expression",
+];
+
 function walkMarkdown(root: string): string[] {
   return fs.readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const fullPath = path.join(root, entry.name);
@@ -76,22 +84,64 @@ export async function indexMarkdownDir(db: Database, root: string): Promise<void
   tx(files);
 }
 
+function runLexicalSearch(db: Database, query: string): SearchHit[] {
+  return db
+    .query(
+      `
+      SELECT d.path AS path, c.chunk_id AS chunkId, c.heading_path AS headingPath, c.text AS text
+      FROM chunks_fts
+      JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id
+      JOIN documents d ON d.doc_id = c.doc_id
+      WHERE chunks_fts MATCH ?
+      ORDER BY bm25(chunks_fts)
+      LIMIT 10
+      `,
+    )
+    .all(query) as SearchHit[];
+}
+
+function isRecoverableMatchError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return FTS_MATCH_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+function sanitizeLexicalQuery(query: string): string {
+  const tokens = query.match(/[\p{L}\p{N}]+/gu) ?? [];
+  return tokens.join(" ").trim();
+}
+
 export function searchLexical(db: Database, query: string): SearchHit[] {
-  try {
-    return db
-      .query(
-        `
-        SELECT d.path AS path, c.chunk_id AS chunkId, c.heading_path AS headingPath, c.text AS text
-        FROM chunks_fts
-        JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id
-        JOIN documents d ON d.doc_id = c.doc_id
-        WHERE chunks_fts MATCH ?
-        ORDER BY bm25(chunks_fts)
-        LIMIT 10
-        `,
-      )
-      .all(query) as SearchHit[];
-  } catch {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) {
     return [];
   }
+
+  try {
+    return runLexicalSearch(db, normalizedQuery);
+  } catch (error) {
+    if (!isRecoverableMatchError(error)) {
+      throw error;
+    }
+
+    const sanitizedQuery = sanitizeLexicalQuery(normalizedQuery);
+    if (!sanitizedQuery || sanitizedQuery === normalizedQuery) {
+      return [];
+    }
+
+    try {
+      return runLexicalSearch(db, sanitizedQuery);
+    } catch (fallbackError) {
+      if (!isRecoverableMatchError(fallbackError)) {
+        throw fallbackError;
+      }
+
+      return [];
+    }
+  }
+
+  return [];
 }

@@ -33,12 +33,13 @@ export function buildRetrievalMode(opts: BuildRetrievalModeOpts): RetrievalMode 
 
 export function doctorRetrieval(opts: BuildRetrievalModeOpts): DoctorReport {
   const mode = buildRetrievalMode(opts);
+  const graphReady = opts.vectorEnabled && opts.graphEnabled;
 
   return {
     mode,
     lexical: "ready",
     vector: opts.vectorEnabled ? "ready" : "disabled",
-    graph: opts.graphEnabled ? "ready" : "disabled",
+    graph: graphReady ? "ready" : "disabled",
     fallback: opts.vectorEnabled ? null : "vector disabled; using lexical mode",
   };
 }

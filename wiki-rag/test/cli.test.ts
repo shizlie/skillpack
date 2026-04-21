@@ -76,6 +76,16 @@ describe("wiki-rag cli", () => {
     expect(decoder.decode(result.stdout)).toContain("lexical: ready");
   });
 
+  test("doctor fails for missing explicit db path", () => {
+    const dbPath = path.join(os.tmpdir(), `wiki-rag-missing-doctor-${Date.now()}.db`);
+    const result = runCli(["doctor", "--db", dbPath]);
+
+    expect(result.exitCode).toBe(1);
+    expect(decoder.decode(result.stdout)).toBe("");
+    expect(decoder.decode(result.stderr)).toContain(`database not found: ${dbPath}`);
+    expect(decoder.decode(result.stderr)).toContain("omit --db to use the default database");
+  });
+
   test("stats returns json with doc and chunk counts", () => {
     const dbPath = seedStatsDb();
     const result = runCli(["stats", "--db", dbPath]);
@@ -85,6 +95,16 @@ describe("wiki-rag cli", () => {
 
     const payload = JSON.parse(decoder.decode(result.stdout));
     expect(payload).toEqual({ docs: 2, chunks: 3 });
+  });
+
+  test("stats fails for missing explicit db path", () => {
+    const dbPath = path.join(os.tmpdir(), `wiki-rag-missing-stats-${Date.now()}.db`);
+    const result = runCli(["stats", "--db", dbPath]);
+
+    expect(result.exitCode).toBe(1);
+    expect(decoder.decode(result.stdout)).toBe("");
+    expect(decoder.decode(result.stderr)).toContain(`database not found: ${dbPath}`);
+    expect(decoder.decode(result.stderr)).toContain("omit --db to use the default database");
   });
 
   test("unknown command exits non-zero and reports unknown command", () => {

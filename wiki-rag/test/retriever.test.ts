@@ -24,7 +24,7 @@ describe("retriever", () => {
       mode: "lexical",
       lexical: "ready",
       vector: "disabled",
-      graph: "ready",
+      graph: "disabled",
       fallback: "vector disabled; using lexical mode",
     });
   });
