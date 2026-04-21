@@ -10,6 +10,14 @@ export type Scored = {
   score: number;
 };
 
+export type DoctorReport = {
+  mode: RetrievalMode;
+  lexical: "ready";
+  vector: "ready" | "disabled";
+  graph: "ready" | "disabled";
+  fallback: string | null;
+};
+
 type BuildRetrievalModeOpts = {
   vectorEnabled: boolean;
   graphEnabled: boolean;
@@ -21,6 +29,18 @@ export function buildRetrievalMode(opts: BuildRetrievalModeOpts): RetrievalMode 
   if (!opts.vectorEnabled) return "lexical";
   if (opts.graphEnabled) return "graph";
   return "hybrid";
+}
+
+export function doctorRetrieval(opts: BuildRetrievalModeOpts): DoctorReport {
+  const mode = buildRetrievalMode(opts);
+
+  return {
+    mode,
+    lexical: "ready",
+    vector: opts.vectorEnabled ? "ready" : "disabled",
+    graph: opts.graphEnabled ? "ready" : "disabled",
+    fallback: opts.vectorEnabled ? null : "vector disabled; using lexical mode",
+  };
 }
 
 export function combineScores(lexical: Ranked[], semantic: Ranked[], graph: Ranked[]): Scored[] {
@@ -41,6 +61,6 @@ export function combineScores(lexical: Ranked[], semantic: Ranked[], graph: Rank
     .map(([id, score]) => ({ id, score }))
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
-      return left.id.localeCompare(right.id);
+      return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
     });
 }
