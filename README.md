@@ -106,7 +106,66 @@ Eng review is complete. Week-1 foundations and CLI/runtime integration are imple
 
 Next implementation lane:
 
-- Add CI/CD release pipeline for distributable artifacts (`packages/cli`, `packages/runtime`)
+- Validate the new release artifacts with a receiver smoke test on each tagged release and document expected operator troubleshooting paths.
+
+## End-user install guide (Release artifacts)
+
+Every GitHub tag release (`vX.Y.Z`) publishes operator-ready artifacts for users who do not want to clone/build the full repo.
+
+Artifacts:
+
+- `skillpack-cli-<version>-linux-x64` (standalone CLI binary)
+- `skillpack-runtime-<version>-linux-x64` (standalone runtime server binary)
+- `skillpack-cli-<version>-source.tar.gz` (auditable/rebuildable CLI workspace source bundle)
+- `skillpack-runtime-<version>-source.tar.gz` (runtime source bundle)
+- `*.sha256` checksum files for each artifact
+
+### Option A: use standalone binaries (recommended for operators)
+
+1. Download `skillpack-cli-<version>-linux-x64` and `skillpack-cli-<version>-linux-x64.sha256` from the release.
+2. Verify integrity:
+
+```bash
+sha256sum -c skillpack-cli-<version>-linux-x64.sha256
+```
+
+3. Make executable and run:
+
+```bash
+chmod +x skillpack-cli-<version>-linux-x64
+./skillpack-cli-<version>-linux-x64 --help
+```
+
+4. Do the same for runtime server binary:
+
+```bash
+sha256sum -c skillpack-runtime-<version>-linux-x64.sha256
+chmod +x skillpack-runtime-<version>-linux-x64
+./skillpack-runtime-<version>-linux-x64 <bundle.mcpb> <bundle.public.pem>
+```
+
+Runtime prerequisites on receiver machine:
+
+- `node` is not required when using the compiled runtime binary.
+- `unzip` and `tar` must be installed (runtime uses both to verify and unpack bundle assets).
+
+### Option B: use source bundles (auditable/rebuildable)
+
+CLI source bundle:
+
+```bash
+tar -xzf skillpack-cli-<version>-source.tar.gz
+cd skillpack-cli-<version>
+bun install --frozen-lockfile
+bun packages/cli/src/cli.js --help
+```
+
+Runtime source bundle:
+
+```bash
+tar -xzf skillpack-runtime-<version>-source.tar.gz
+node skillpack-runtime-<version>/server.mjs <bundle.mcpb> <bundle.public.pem>
+```
 
 ## Policy loop demo (implemented)
 

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [Unreleased]
+
+### Added
+
+- Extended release workflow to publish distributable CLI/runtime artifacts per tag release:
+  - standalone Linux x64 binaries for `skillpack` CLI and runtime server
+  - source tarballs for CLI dependency closure and runtime source
+  - SHA-256 checksum files for all new artifacts
+- Added end-user release install/verification guide in `README.md` for binary and source distribution paths.
+
 ## [0.3.0.0] - 2026-04-20
 
 ### Added

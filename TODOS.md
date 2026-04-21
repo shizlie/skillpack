@@ -1,1 +1,1 @@
-1. Add CI/CD release pipeline for distributable artifacts (`packages/cli`, `packages/runtime`) so users can download published outputs after merge.
+1. Define and prioritize the next post-release milestone (dashboard API hardening, packaging UX, or operator observability), then break into implementation tasks.

@@ -58,6 +58,47 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
+      - name: Build CLI/runtime distributable artifacts
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages"
+
+          # Standalone Linux binaries for operators (no repo clone required)
+          bun build --compile --target=bun-linux-x64 packages/cli/src/cli.js \
+            --outfile "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-linux-x64"
+          bun build --compile --target=bun-linux-x64 packages/runtime/src/server.mjs \
+            --outfile "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-linux-x64"
+          chmod +x "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-linux-x64"
+          chmod +x "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-linux-x64"
+
+          # Source bundle for users who prefer auditable/rebuildable workspace installs
+          cp package.json "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/package.json"
+          cp bun.lock "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/bun.lock"
+          cp -R packages/cli "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages/cli"
+          cp -R packages/crypto "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages/crypto"
+          cp -R packages/license-server "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages/license-server"
+          cp -R packages/tsa "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages/tsa"
+          cp -R packages/protocol "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages/protocol"
+          tar -czf "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-source.tar.gz" \
+            -C "dist/releases/v${VERSION}/src" "skillpack-cli-${VERSION}"
+
+          # Runtime source bundle (plain Node.js runtime server files)
+          mkdir -p "dist/releases/v${VERSION}/src/skillpack-runtime-${VERSION}"
+          cp packages/runtime/src/server.mjs "dist/releases/v${VERSION}/src/skillpack-runtime-${VERSION}/server.mjs"
+          cp packages/runtime/src/server-util.mjs "dist/releases/v${VERSION}/src/skillpack-runtime-${VERSION}/server-util.mjs"
+          tar -czf "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-source.tar.gz" \
+            -C "dist/releases/v${VERSION}/src" "skillpack-runtime-${VERSION}"
+
+          # Integrity checksums
+          sha256sum "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-linux-x64" > \
+            "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-linux-x64.sha256"
+          sha256sum "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-linux-x64" > \
+            "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-linux-x64.sha256"
+          sha256sum "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-source.tar.gz" > \
+            "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-source.tar.gz.sha256"
+          sha256sum "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-source.tar.gz" > \
+            "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-source.tar.gz.sha256"
+
       - name: Extract changelog entry
         id: notes
         run: |
@@ -75,4 +116,12 @@ jobs:
             --notes-file "${{ steps.notes.outputs.notes_file }}" \
             "dist/skills/laws-consultant-${VERSION}-bundle.tar.gz" \
             "dist/skills/laws-consultant-${VERSION}-bundle.tar.gz.sha256" \
-            "dist/skills/laws-consultant-${VERSION}/laws-consultant-${VERSION}.public.pem"
+            "dist/skills/laws-consultant-${VERSION}/laws-consultant-${VERSION}.public.pem" \
+            "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-linux-x64" \
+            "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-linux-x64.sha256" \
+            "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-linux-x64" \
+            "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-linux-x64.sha256" \
+            "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-source.tar.gz" \
+            "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-source.tar.gz.sha256" \
+            "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-source.tar.gz" \
+            "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-source.tar.gz.sha256"
