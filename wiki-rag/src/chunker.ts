@@ -14,13 +14,11 @@ function headingLevel(line: string): number | null {
   return match ? match[1].length : null;
 }
 
-function buildChunkId(path: string, headingPath: string | null, ordinal: number, text: string): string {
+function buildChunkId(path: string, headingPath: string | null, text: string): string {
   return createHash("sha256")
     .update(path)
     .update("\0")
     .update(headingPath ?? "")
-    .update("\0")
-    .update(String(ordinal))
     .update("\0")
     .update(text.replace(/\s+/g, " ").trim())
     .digest("hex");
@@ -38,7 +36,7 @@ function makeChunk(
   if (!trimmed) return null;
 
   return {
-    chunkId: buildChunkId(path, headingPath, ordinal, trimmed),
+    chunkId: buildChunkId(path, headingPath, trimmed),
     headingPath,
     text: trimmed,
     ordinal,
@@ -93,11 +91,8 @@ export function chunkMarkdown(path: string, markdown: string, maxChars = 1800): 
 
     if (level) {
       flush();
-      headingStack.splice(level - 1);
-      headingStack[level - 1] = line.replace(/^#{1,6}\s+/, "").trim();
-      bufferStart = lineEnd;
-      buffer = "";
-      cursor = lineEnd;
+      headingStack.length = Math.min(headingStack.length, level - 1);
+      headingStack.push(line.replace(/^#{1,6}\s+/, "").trim());
     } else {
       appendLine(line, lineStart, lineEnd);
     }
