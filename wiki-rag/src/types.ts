@@ -1,17 +1,17 @@
 export type DocRow = {
-  docId: string;
+  doc_id: string;
   path: string;
   title: string | null;
-  mtimeMs: number;
-  contentHash: string;
+  mtime_ms: number;
+  content_hash: string;
 };
 
 export type ChunkRow = {
-  chunkId: string;
-  docId: string;
-  headingPath: string | null;
+  chunk_id: string;
+  doc_id: string;
+  heading_path: string | null;
   ordinal: number;
   text: string;
-  startOffset: number;
-  endOffset: number;
+  start_offset: number;
+  end_offset: number;
 };

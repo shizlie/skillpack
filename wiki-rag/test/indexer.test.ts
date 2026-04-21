@@ -8,8 +8,7 @@ describe("schema", () => {
     ensureSchema(db);
 
     const tables = listTables(db);
-    expect(tables).toContain("documents");
-    expect(tables).toContain("chunks");
-    expect(tables).toContain("chunks_fts");
+    expect(tables).toHaveLength(3);
+    expect(tables).toEqual(["chunks", "chunks_fts", "documents"]);
   });
 });

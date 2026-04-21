@@ -30,7 +30,7 @@ export function ensureSchema(db: Database) {
 export function listTables(db: Database): string[] {
   return db
     .query(
-      "SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name",
+      "SELECT name FROM sqlite_master WHERE name IN ('chunks', 'chunks_fts', 'documents') ORDER BY CASE name WHEN 'chunks' THEN 1 WHEN 'chunks_fts' THEN 2 WHEN 'documents' THEN 3 END",
     )
     .all()
     .map((row: { name: string }) => row.name);
