@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 
 import { ensureSchema } from "./schema";
 
-type Command = "index" | "query" | "doctor" | "stats";
+type Command = "doctor" | "stats";
 
 function openDatabase() {
   const db = new Database(":memory:");
@@ -24,32 +24,15 @@ function printStats() {
   console.log(JSON.stringify({ docs: 0, chunks: 0 }));
 }
 
-function runIndex() {
-  openDatabase();
-  console.log("index: ready");
-}
-
-function runQuery(args: string[]) {
-  openDatabase();
-  const query = args.filter((arg) => !arg.startsWith("-")).join(" ").trim();
-  console.log(JSON.stringify({ query, results: [] }));
-}
-
 function unknownCommand(command: string | undefined): never {
   console.error(`unknown command: ${command ?? ""}`.trim());
   process.exit(1);
 }
 
 function main(argv: string[]) {
-  const [command, ...args] = argv;
+  const [command] = argv;
 
   switch (command as Command | undefined) {
-    case "index":
-      runIndex();
-      return;
-    case "query":
-      runQuery(args);
-      return;
     case "doctor":
       printDoctor();
       return;
