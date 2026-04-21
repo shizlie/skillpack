@@ -28,8 +28,21 @@ function normalizePath(root: string, filePath: string): string {
 
 export async function indexMarkdownDir(db: Database, root: string): Promise<void> {
   const files = walkMarkdown(root);
+  const currentPaths = new Set(files.map((filePath) => normalizePath(root, filePath)));
 
   const tx = db.transaction((paths: string[]) => {
+    const existingDocs = db
+      .query("SELECT doc_id AS docId, path FROM documents")
+      .all() as Array<{ docId: string; path: string }>;
+
+    for (const doc of existingDocs) {
+      if (!currentPaths.has(doc.path)) {
+        db.run("DELETE FROM chunks_fts WHERE chunk_id IN (SELECT chunk_id FROM chunks WHERE doc_id = ?)", [doc.docId]);
+        db.run("DELETE FROM chunks WHERE doc_id = ?", [doc.docId]);
+        db.run("DELETE FROM documents WHERE doc_id = ?", [doc.docId]);
+      }
+    }
+
     for (const filePath of paths) {
       const markdown = fs.readFileSync(filePath, "utf8");
       const stat = fs.statSync(filePath);
@@ -64,17 +77,21 @@ export async function indexMarkdownDir(db: Database, root: string): Promise<void
 }
 
 export function searchLexical(db: Database, query: string): SearchHit[] {
-  return db
-    .query(
-      `
-      SELECT d.path AS path, c.chunk_id AS chunkId, c.heading_path AS headingPath, c.text AS text
-      FROM chunks_fts
-      JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id
-      JOIN documents d ON d.doc_id = c.doc_id
-      WHERE chunks_fts MATCH ?
-      ORDER BY bm25(chunks_fts)
-      LIMIT 10
-      `,
-    )
-    .all(query) as SearchHit[];
+  try {
+    return db
+      .query(
+        `
+        SELECT d.path AS path, c.chunk_id AS chunkId, c.heading_path AS headingPath, c.text AS text
+        FROM chunks_fts
+        JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id
+        JOIN documents d ON d.doc_id = c.doc_id
+        WHERE chunks_fts MATCH ?
+        ORDER BY bm25(chunks_fts)
+        LIMIT 10
+        `,
+      )
+      .all(query) as SearchHit[];
+  } catch {
+    return [];
+  }
 }
