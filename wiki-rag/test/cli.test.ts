@@ -20,4 +20,22 @@ describe("wiki-rag cli", () => {
     expect(decoder.decode(result.stderr)).toBe("");
     expect(decoder.decode(result.stdout)).toContain("lexical: ready");
   });
+
+  test("stats returns json with doc and chunk counts", () => {
+    const result = runCli(["stats"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(decoder.decode(result.stderr)).toBe("");
+
+    const payload = JSON.parse(decoder.decode(result.stdout));
+    expect(payload).toEqual({ docs: 0, chunks: 0 });
+  });
+
+  test("unknown command exits non-zero and reports unknown command", () => {
+    const result = runCli(["bogus"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(decoder.decode(result.stdout)).toBe("");
+    expect(decoder.decode(result.stderr)).toContain("unknown command");
+  });
 });

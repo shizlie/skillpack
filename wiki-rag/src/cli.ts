@@ -20,8 +20,11 @@ function printDoctor() {
 }
 
 function printStats() {
-  openDatabase();
-  console.log(JSON.stringify({ docs: 0, chunks: 0 }));
+  const db = openDatabase();
+  const docsRow = db.query("SELECT COUNT(*) AS count FROM documents").get() as { count: number };
+  const chunksRow = db.query("SELECT COUNT(*) AS count FROM chunks").get() as { count: number };
+
+  console.log(JSON.stringify({ docs: docsRow.count, chunks: chunksRow.count }));
 }
 
 function unknownCommand(command: string | undefined): never {
