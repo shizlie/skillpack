@@ -10,8 +10,10 @@
   "scripts": {
     "test": "bun test",
     "test:unit": "bun test obsidian-query.test.ts packages/*/test",
+    "test:wiki-rag": "bun test wiki-rag/test",
     "test:e2e": "bun test e2e",
     "test:crypto": "bun test packages/crypto/test",
+    "wiki-rag": "bun wiki-rag/src/cli.ts",
     "bundle:laws-consultant": "bun scripts/bundle-laws-consultant.mjs",
     "test:receiver-e2e": "bash scripts/test-receiver-e2e.sh"
   },
