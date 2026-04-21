@@ -46,12 +46,25 @@ function getStoreMethod(leaseStore, methodName) {
   return method.bind(leaseStore);
 }
 
+function readApiKey(request) {
+  return request.headers.get("x-api-key") ?? request.headers.get("X-Api-Key");
+}
+
+function isManagementRoute(request, pathname) {
+  if (request.method === "POST" && pathname === "/v1/policies/issue") return true;
+  if (request.method === "POST" && pathname === "/v1/policies/sync") return true;
+  if (request.method === "POST" && pathname === "/v1/meter/upload") return true;
+  if (request.method === "GET" && pathname === "/v1/usage/summary") return true;
+  return false;
+}
+
 export function createLicenseFetchHandler({
   signingPrivateKeyPem,
   signingPublicKeyPem,
   leaseStore = createInMemoryLeaseStore(),
   tsaMonitor = createTsaMonitor(),
   attestationContract = createManualTimeAttestationContract(),
+  managementApiKey = null,
 } = {}) {
   if (!signingPrivateKeyPem || !signingPublicKeyPem) {
     throw new Error("license_server_missing_signing_keys");
@@ -60,6 +73,16 @@ export function createLicenseFetchHandler({
   return async function fetch(request) {
     const url = new URL(request.url);
     const nowSec = Math.floor(Date.now() / 1000);
+
+    if (isManagementRoute(request, url.pathname)) {
+      if (!managementApiKey) {
+        return json({ error: "management_api_key_not_configured" }, 503);
+      }
+      const providedApiKey = readApiKey(request);
+      if (providedApiKey !== managementApiKey) {
+        return json({ error: "unauthorized" }, 401);
+      }
+    }
 
     if (request.method === "GET" && url.pathname === "/healthz") {
       return json({ ok: true, service: "license-server" });
@@ -144,9 +167,6 @@ export function createLicenseFetchHandler({
       }
     }
 
-    // TODO(auth): /v1/policies/* and /v1/meter/* require authentication before any non-pilot deployment.
-    // Add pre-shared API key (X-Api-Key header) or mTLS before exposing to untrusted networks.
-    // Without auth, any caller who can reach the server can overwrite policies or submit fake meter events.
     if (request.method === "POST" && url.pathname === "/v1/policies/issue") {
       try {
         const body = await readBody(request);
@@ -292,10 +312,18 @@ export function createLicenseFetchHandler({
 export function startLicenseServer(options) {
   const storageMode = options?.storageMode ?? "memory";
   const leaseStore = options?.leaseStore ?? createInMemoryLeaseStore();
+  const managementApiKey =
+    options?.managementApiKey ??
+    process.env.SKILLPACK_MANAGEMENT_API_KEY ??
+    null;
   if (!options?.leaseStore && storageMode === "sqlite") {
     throw new Error("license_server_sqlite_store_not_injected");
   }
-  const fetch = createLicenseFetchHandler({ ...options, leaseStore });
+  const fetch = createLicenseFetchHandler({
+    ...options,
+    leaseStore,
+    managementApiKey,
+  });
   const port = options?.port ?? 3001;
   return Bun.serve({ port, fetch });
 }

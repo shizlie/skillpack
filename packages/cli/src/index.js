@@ -57,6 +57,11 @@ function requireServerUrl(flags) {
   return serverUrl;
 }
 
+function buildServerHeaders(flags) {
+  const apiKey = flags["api-key"];
+  return apiKey ? { "x-api-key": apiKey } : undefined;
+}
+
 function parseJsonLines(filePath) {
   const raw = fs.readFileSync(filePath, "utf8");
   return raw
@@ -266,12 +271,14 @@ function buildPolicyFromFlags(flags) {
 async function issuePolicy(commandArgs, fetchImpl) {
   const flags = parseArgMap(commandArgs);
   const serverUrl = requireServerUrl(flags);
+  const headers = buildServerHeaders(flags);
   const policy = flags["policy-file"]
     ? readJson(flags["policy-file"], "policy_file")
     : buildPolicyFromFlags(flags);
   const response = await fetchImpl(
     new Request(`${serverUrl}/v1/policies/issue`, {
       method: "POST",
+      headers,
       body: JSON.stringify({ policy }),
     })
   );
@@ -281,10 +288,12 @@ async function issuePolicy(commandArgs, fetchImpl) {
 async function syncPolicy(commandArgs, fetchImpl) {
   const flags = parseArgMap(commandArgs);
   const serverUrl = requireServerUrl(flags);
+  const headers = buildServerHeaders(flags);
   if (!flags["workspace-id"]) throw new Error("missing_workspace_id");
   const response = await fetchImpl(
     new Request(`${serverUrl}/v1/policies/sync`, {
       method: "POST",
+      headers,
       body: JSON.stringify({
         workspaceId: flags["workspace-id"],
         policyId: flags["policy-id"],
@@ -297,6 +306,7 @@ async function syncPolicy(commandArgs, fetchImpl) {
 async function uploadMeter(commandArgs, fetchImpl) {
   const flags = parseArgMap(commandArgs);
   const serverUrl = requireServerUrl(flags);
+  const headers = buildServerHeaders(flags);
   if (!flags["workspace-id"]) throw new Error("missing_workspace_id");
   const filePath = flags.file ?? flags["events-file"];
   if (!filePath) throw new Error("missing_file");
@@ -304,6 +314,7 @@ async function uploadMeter(commandArgs, fetchImpl) {
   const response = await fetchImpl(
     new Request(`${serverUrl}/v1/meter/upload`, {
       method: "POST",
+      headers,
       body: JSON.stringify({
         workspaceId: flags["workspace-id"],
         events,
@@ -316,6 +327,7 @@ async function uploadMeter(commandArgs, fetchImpl) {
 async function usageSummary(commandArgs, fetchImpl) {
   const flags = parseArgMap(commandArgs);
   const serverUrl = requireServerUrl(flags);
+  const headers = buildServerHeaders(flags);
   const url = new URL(`${serverUrl}/v1/usage/summary`);
   if (flags["workspace-id"]) {
     url.searchParams.set("workspaceId", flags["workspace-id"]);
@@ -323,6 +335,7 @@ async function usageSummary(commandArgs, fetchImpl) {
   const response = await fetchImpl(
     new Request(url.toString(), {
       method: "GET",
+      headers,
     })
   );
   return { status: response.status, body: await response.json() };

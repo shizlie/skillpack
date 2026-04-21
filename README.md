@@ -186,6 +186,25 @@ Run the deterministic local value-loop demo:
 
 Runbook: `docs/runbooks/policy-loop-demo.md`
 
+## Policy loop demo (implemented)
+
+CLI control commands now include:
+
+- `skillpack policy issue`
+- `skillpack policy sync`
+- `skillpack meter upload`
+- `skillpack usage summary`
+
+Warning-only degradation is enforced at 100%-120% usage (`ALLOW_WITH_WARNING`), then hard stop beyond 120% (`DENY`).
+
+Run the deterministic local value-loop demo:
+
+```bash
+./scripts/demo-policy-loop.sh
+```
+
+Runbook: `docs/runbooks/policy-loop-demo.md`
+
 ## Bundle packaging (`.mcpb`) (implemented)
 
 `skillpack` now includes a bundle packaging command:

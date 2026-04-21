@@ -167,6 +167,128 @@ test("policy enforcement: seatPolicy.defaultMode DISABLED blocks unknown seatId"
   expect(out.reasonCodes).toEqual(["seat_disabled"]);
 });
 
+test("policy enforcement: explicit seat override DISABLED blocks known seatId", () => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const policy = makeBasePolicy(nowSec, {
+    seatPolicy: {
+      defaultMode: "ENABLED",
+      seats: {
+        "seat-1": { mode: "DISABLED" },
+      },
+    },
+  });
+
+  const out = evaluatePolicyToolCallDecision({
+    policy,
+    seatId: "seat-1",
+    toolName: "wiki_search",
+    currentCount: 0,
+    nowSec,
+  });
+
+  expect(out.decision).toBe("DENY");
+  expect(out.reasonCodes).toEqual(["seat_disabled"]);
+});
+
+test("policy enforcement: workspace time NOT_STARTED denies", () => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const policy = makeBasePolicy(nowSec, {
+    timePolicy: {
+      workspace: {
+        startsAtSec: nowSec + 60,
+        expiresAtSec: nowSec + 3600,
+        graceUntilSec: nowSec + 7200,
+      },
+    },
+  });
+
+  const out = evaluatePolicyToolCallDecision({
+    policy,
+    seatId: "default",
+    toolName: "wiki_search",
+    currentCount: 0,
+    nowSec,
+  });
+
+  expect(out.decision).toBe("DENY");
+  expect(out.reasonCodes).toEqual(["time_not_started"]);
+});
+
+test("policy enforcement: GRACE + NORMAL usage allows with time warning", () => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const policy = makeBasePolicy(nowSec, {
+    usagePolicy: {
+      toolBudgets: { wiki_search: 100, wiki_read_page: 100 },
+    },
+    timePolicy: {
+      workspace: {
+        startsAtSec: nowSec - 7200,
+        expiresAtSec: nowSec - 60,
+        graceUntilSec: nowSec + 600,
+      },
+    },
+  });
+
+  const out = evaluatePolicyToolCallDecision({
+    policy,
+    seatId: "default",
+    toolName: "wiki_search",
+    currentCount: 0,
+    nowSec,
+  });
+
+  expect(out.decision).toBe("ALLOW_WITH_WARNING");
+  expect(out.reasonCodes).toEqual(["time_grace"]);
+});
+
+test("policy enforcement: GRACE + usage warning returns both reason codes", () => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const policy = makeBasePolicy(nowSec, {
+    usagePolicy: {
+      toolBudgets: { wiki_search: 1, wiki_read_page: 1 },
+    },
+    timePolicy: {
+      workspace: {
+        startsAtSec: nowSec - 7200,
+        expiresAtSec: nowSec - 60,
+        graceUntilSec: nowSec + 600,
+      },
+    },
+  });
+
+  const out = evaluatePolicyToolCallDecision({
+    policy,
+    seatId: "default",
+    toolName: "wiki_search",
+    currentCount: 0,
+    nowSec,
+  });
+
+  expect(out.decision).toBe("ALLOW_WITH_WARNING");
+  expect(out.reasonCodes).toEqual(["time_grace", "usage_warning"]);
+});
+
+test("policy enforcement: exactly at hard-stop threshold is still warning", () => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const policy = makeBasePolicy(nowSec, {
+    usagePolicy: {
+      thresholds: { warningPct: 100, hardStopPct: 120 },
+      toolBudgets: { wiki_search: 10, wiki_read_page: 10 },
+    },
+  });
+
+  const out = evaluatePolicyToolCallDecision({
+    policy,
+    seatId: "default",
+    toolName: "wiki_search",
+    currentCount: 11, // nextCount = 12 => exactly 120% of budget(10)
+    nowSec,
+  });
+
+  expect(out.decision).toBe("ALLOW_WITH_WARNING");
+  expect(out.reasonCodes).toEqual(["usage_warning"]);
+});
+
 test("policy enforcement: tool not in toolBudgets is uncapped (no usage enforcement)", () => {
   const nowSec = Math.floor(Date.now() / 1000);
   const policy = makeBasePolicy(nowSec);

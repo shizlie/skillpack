@@ -31,15 +31,19 @@ function makePolicy({ policyId, workspaceId = "ws-1", workspaceMode = "ENABLED" 
 
 test("policy issue + sync + not_modified + meter upload + usage summary + disable propagation", async () => {
   const keys = generateEd25519KeyPair();
+  const managementApiKey = "test-management-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey,
   });
+  const headers = { "x-api-key": managementApiKey };
 
   const policyV1 = makePolicy({ policyId: "pol-1", workspaceMode: "ENABLED" });
   const issueV1 = await fetch(
     new Request("http://local/v1/policies/issue", {
       method: "POST",
+      headers,
       body: JSON.stringify({ policy: policyV1 }),
     })
   );
@@ -51,6 +55,7 @@ test("policy issue + sync + not_modified + meter upload + usage summary + disabl
   const syncFirst = await fetch(
     new Request("http://local/v1/policies/sync", {
       method: "POST",
+      headers,
       body: JSON.stringify({ workspaceId: "ws-1" }),
     })
   );
@@ -63,6 +68,7 @@ test("policy issue + sync + not_modified + meter upload + usage summary + disabl
   const syncNotModified = await fetch(
     new Request("http://local/v1/policies/sync", {
       method: "POST",
+      headers,
       body: JSON.stringify({ workspaceId: "ws-1", policyId: "pol-1" }),
     })
   );
@@ -73,6 +79,7 @@ test("policy issue + sync + not_modified + meter upload + usage summary + disabl
   const upload = await fetch(
     new Request("http://local/v1/meter/upload", {
       method: "POST",
+      headers,
       body: JSON.stringify({
         workspaceId: "ws-1",
         events: [
@@ -108,6 +115,7 @@ test("policy issue + sync + not_modified + meter upload + usage summary + disabl
   const summaryRes = await fetch(
     new Request("http://local/v1/usage/summary?workspaceId=ws-1", {
       method: "GET",
+      headers,
     })
   );
   expect(summaryRes.status).toBe(200);
@@ -126,6 +134,7 @@ test("policy issue + sync + not_modified + meter upload + usage summary + disabl
   const issueV2 = await fetch(
     new Request("http://local/v1/policies/issue", {
       method: "POST",
+      headers,
       body: JSON.stringify({ policy: policyV2 }),
     })
   );
@@ -134,6 +143,7 @@ test("policy issue + sync + not_modified + meter upload + usage summary + disabl
   const syncAfterDisable = await fetch(
     new Request("http://local/v1/policies/sync", {
       method: "POST",
+      headers,
       body: JSON.stringify({ workspaceId: "ws-1", policyId: "pol-1" }),
     })
   );
@@ -142,4 +152,29 @@ test("policy issue + sync + not_modified + meter upload + usage summary + disabl
   expect(syncAfterDisableBody.notModified).toBe(false);
   expect(syncAfterDisableBody.policy.policyId).toBe("pol-2");
   expect(syncAfterDisableBody.policy.workspacePolicy.mode).toBe("DISABLED");
+});
+
+test("management endpoints require api key when configured", async () => {
+  const keys = generateEd25519KeyPair();
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: "required-key",
+  });
+
+  const issueNoKey = await fetch(
+    new Request("http://local/v1/policies/issue", {
+      method: "POST",
+      body: JSON.stringify({ policy: makePolicy({ policyId: "pol-auth" }) }),
+    })
+  );
+  expect(issueNoKey.status).toBe(401);
+
+  const summaryWrongKey = await fetch(
+    new Request("http://local/v1/usage/summary?workspaceId=ws-1", {
+      method: "GET",
+      headers: { "x-api-key": "wrong-key" },
+    })
+  );
+  expect(summaryWrongKey.status).toBe(401);
 });

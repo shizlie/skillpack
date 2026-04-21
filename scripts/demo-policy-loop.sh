@@ -98,19 +98,21 @@ fs.writeFileSync(policyV1File, JSON.stringify(makePolicy({ policyId: "pol-v1", b
 fs.writeFileSync(policyV2File, JSON.stringify(makePolicy({ policyId: "pol-v2", budget: 10 }), null, 2));
 
 const keys = generateEd25519KeyPair();
+const managementApiKey = "demo-policy-key";
 const fetch = createLicenseFetchHandler({
   signingPrivateKeyPem: keys.privateKeyPem,
   signingPublicKeyPem: keys.publicKeyPem,
+  managementApiKey,
 });
 
 const issueV1 = await runCli(
-  ["policy", "issue", "--server-url", "http://local", "--policy-file", policyV1File],
+  ["policy", "issue", "--server-url", "http://local", "--api-key", managementApiKey, "--policy-file", policyV1File],
   fetch
 );
 checkpoint("policy issue v1", issueV1.code === 0 && issueV1.parsed?.accepted === true);
 
 const syncV1 = await runCli(
-  ["policy", "sync", "--server-url", "http://local", "--workspace-id", "ws-demo"],
+  ["policy", "sync", "--server-url", "http://local", "--api-key", managementApiKey, "--workspace-id", "ws-demo"],
   fetch
 );
 checkpoint("policy sync v1", syncV1.code === 0 && syncV1.parsed?.policy?.policyId === "pol-v1");
@@ -149,26 +151,26 @@ fs.writeFileSync(
 );
 
 const upload = await runCli(
-  ["meter", "upload", "--server-url", "http://local", "--workspace-id", "ws-demo", "--file", meterFile],
+  ["meter", "upload", "--server-url", "http://local", "--api-key", managementApiKey, "--workspace-id", "ws-demo", "--file", meterFile],
   fetch
 );
 checkpoint("meter upload", upload.code === 0 && upload.parsed?.ack?.count === 2);
 
 const summary = await runCli(
-  ["usage", "summary", "--server-url", "http://local", "--workspace-id", "ws-demo"],
+  ["usage", "summary", "--server-url", "http://local", "--api-key", managementApiKey, "--workspace-id", "ws-demo"],
   fetch
 );
 const totalCalls = summary.parsed?.summary?.[0]?.totalCalls;
 checkpoint("usage summary", summary.code === 0 && totalCalls === 2, `totalCalls=${totalCalls}`);
 
 const issueV2 = await runCli(
-  ["policy", "issue", "--server-url", "http://local", "--policy-file", policyV2File],
+  ["policy", "issue", "--server-url", "http://local", "--api-key", managementApiKey, "--policy-file", policyV2File],
   fetch
 );
 checkpoint("policy renew (issue v2)", issueV2.code === 0 && issueV2.parsed?.policy?.policyId === "pol-v2");
 
 const syncV2 = await runCli(
-  ["policy", "sync", "--server-url", "http://local", "--workspace-id", "ws-demo", "--policy-id", "pol-v1"],
+  ["policy", "sync", "--server-url", "http://local", "--api-key", managementApiKey, "--workspace-id", "ws-demo", "--policy-id", "pol-v1"],
   fetch
 );
 checkpoint("policy sync after renew", syncV2.code === 0 && syncV2.parsed?.policy?.policyId === "pol-v2");

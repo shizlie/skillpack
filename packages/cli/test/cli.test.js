@@ -167,9 +167,11 @@ test("cli: tsa manual-attest posts to server and latest-attestation reads record
 
 test("cli: policy issue posts policy snapshot", async () => {
   const keys = generateEd25519KeyPair();
+  const managementApiKey = "test-management-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey,
   });
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "skillpack-policy-issue-test-"));
   const policyFile = path.join(workspace, "policy.json");
@@ -182,6 +184,8 @@ test("cli: policy issue posts policy snapshot", async () => {
       "issue",
       "--server-url",
       "http://local",
+      "--api-key",
+      managementApiKey,
       "--policy-file",
       policyFile,
     ],
@@ -196,13 +200,16 @@ test("cli: policy issue posts policy snapshot", async () => {
 
 test("cli: policy sync returns latest policy", async () => {
   const keys = generateEd25519KeyPair();
+  const managementApiKey = "test-management-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey,
   });
   await fetch(
     new Request("http://local/v1/policies/issue", {
       method: "POST",
+      headers: { "x-api-key": managementApiKey },
       body: JSON.stringify({ policy: makePolicy("pol-2", "DISABLED") }),
     })
   );
@@ -214,6 +221,8 @@ test("cli: policy sync returns latest policy", async () => {
       "sync",
       "--server-url",
       "http://local",
+      "--api-key",
+      managementApiKey,
       "--workspace-id",
       "ws-1",
       "--policy-id",
@@ -231,9 +240,11 @@ test("cli: policy sync returns latest policy", async () => {
 
 test("cli: meter upload ingests events from jsonl", async () => {
   const keys = generateEd25519KeyPair();
+  const managementApiKey = "test-management-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey,
   });
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "skillpack-meter-upload-test-"));
   const eventsFile = path.join(workspace, "meter.jsonl");
@@ -269,6 +280,8 @@ test("cli: meter upload ingests events from jsonl", async () => {
       "upload",
       "--server-url",
       "http://local",
+      "--api-key",
+      managementApiKey,
       "--workspace-id",
       "ws-1",
       "--file",
@@ -287,13 +300,16 @@ test("cli: meter upload ingests events from jsonl", async () => {
 
 test("cli: usage summary prints totals", async () => {
   const keys = generateEd25519KeyPair();
+  const managementApiKey = "test-management-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey,
   });
   await fetch(
     new Request("http://local/v1/meter/upload", {
       method: "POST",
+      headers: { "x-api-key": managementApiKey },
       body: JSON.stringify({
         workspaceId: "ws-1",
         events: [
@@ -327,6 +343,8 @@ test("cli: usage summary prints totals", async () => {
       "summary",
       "--server-url",
       "http://local",
+      "--api-key",
+      managementApiKey,
       "--workspace-id",
       "ws-1",
     ],
