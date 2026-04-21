@@ -4,14 +4,24 @@ import { ensureSchema } from "./schema";
 
 type Command = "doctor" | "stats";
 
-function openDatabase() {
-  const db = new Database(":memory:");
+function getDatabasePath(args: string[]): string {
+  const dbIndex = args.indexOf("--db");
+  if (dbIndex === -1) {
+    return ":memory:";
+  }
+
+  const dbPath = args[dbIndex + 1];
+  return dbPath && !dbPath.startsWith("--") ? dbPath : ":memory:";
+}
+
+function openDatabase(dbPath: string) {
+  const db = new Database(dbPath);
   ensureSchema(db);
   return db;
 }
 
-function printDoctor() {
-  openDatabase();
+function printDoctor(dbPath: string) {
+  openDatabase(dbPath);
   console.log("database: ready");
   console.log("schema: ready");
   console.log("lexical: ready");
@@ -19,8 +29,8 @@ function printDoctor() {
   console.log("graph: disabled");
 }
 
-function printStats() {
-  const db = openDatabase();
+function printStats(dbPath: string) {
+  const db = openDatabase(dbPath);
   const docsRow = db.query("SELECT COUNT(*) AS count FROM documents").get() as { count: number };
   const chunksRow = db.query("SELECT COUNT(*) AS count FROM chunks").get() as { count: number };
 
@@ -34,13 +44,14 @@ function unknownCommand(command: string | undefined): never {
 
 function main(argv: string[]) {
   const [command] = argv;
+  const dbPath = getDatabasePath(argv);
 
   switch (command as Command | undefined) {
     case "doctor":
-      printDoctor();
+      printDoctor(dbPath);
       return;
     case "stats":
-      printStats();
+      printStats(dbPath);
       return;
     default:
       unknownCommand(command);
