@@ -13,6 +13,26 @@ The format is based on Keep a Changelog.
   - source tarballs for CLI dependency closure and runtime source
   - SHA-256 checksum files for all new artifacts
 - Added end-user release install/verification guide in `README.md` for binary and source distribution paths.
+
+## [0.3.0.1] - 2026-04-22
+
+### Added
+
+- Added a new `wiki-rag` module (`chunker`, `schema`, `indexer`, `retriever`, `cli`) for local Bun + SQLite retrieval with lexical-first behavior.
+- Added comprehensive `wiki-rag` tests (`chunker`, `indexer`, `retriever`, `cli`, and `e2e`) and package scripts (`test:wiki-rag`, `wiki-rag`).
+- Added runtime/MCP `wiki_runtime_info` tool support to expose bundle/runtime metadata (bundle version, lease mode, seat/workspace/policy context when available).
+- Added runtime-side retrieval metadata in `wiki_search` responses to surface engine path (`sqlite` vs `legacy`) and fallback reasons.
+
+### Changed
+
+- Updated `laws-consultant` skill instructions to require runtime-context display and strict per-claim provenance labels (`WIKI`, `NON-WIKI: model memory`, `NON-WIKI: external`) with citation method.
+- Updated receiver and operator runbooks (`receiver-verify-install`, `test-plan`) to include receiver-realistic UAT for runtime metadata/provenance verification.
+- Updated runtime fallback wiring to keep sqlite-first rollout with mature fail-open legacy fallback.
+
+### Fixed
+
+- Fixed merge compatibility and schema/index test integration for `wiki-rag` after rebasing with `main`.
+- Fixed receiver runbook command/config snippets to be version-parameterized and corrected malformed MCP config example output.
 ## [0.3.0.0] - 2026-04-20
 
 ### Added
