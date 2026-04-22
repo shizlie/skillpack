@@ -1,0 +1,21 @@
+{
+  "name": "skillpack-license-server",
+  "main": "src/index.js",
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // SKILLPACK_MANAGEMENT_API_KEY must be set via:
+  //   wrangler secret put SKILLPACK_MANAGEMENT_API_KEY
+  // Do NOT add it here — [vars] are plaintext and ship the value to production.
+  // For local dev, set it in .dev.vars (gitignored).
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "skillpack-license",
+      // Replace with your D1 database ID after running: wrangler d1 create skillpack-license
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

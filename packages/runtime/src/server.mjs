@@ -23,6 +23,18 @@ import {
   isUnsafeArchivePath,
   ensureSafePathWithin,
 } from "./server-util.mjs";
+import {
+  DEFAULT_LIMIT,
+  MAX_LIMIT,
+  SQLITE_ENGINE,
+  LEGACY_ENGINE,
+  parseBool,
+  clampLimit,
+  toPageId,
+  normalizeSqliteRows,
+  readWikiEngineConfig,
+} from "./wiki-rag-utils.mjs";
+export { readWikiEngineConfig } from "./wiki-rag-utils.mjs";
 
 // ── lease verification (inlined from @skillpack/runtime + @skillpack/crypto) ─
 
@@ -358,23 +370,10 @@ export function evaluatePolicyToolCallDecision({
 
 // ── wiki (inlined from @skillpack/wiki-mcp) ───────────────────────────────────
 
-const DEFAULT_LIMIT = 5;
-const MAX_LIMIT = 20;
-const SQLITE_ENGINE = "sqlite";
-const LEGACY_ENGINE = "legacy";
-
 function normalizePageName(name) {
   const t = (typeof name === "string" ? name : "").trim();
   if (!t) throw new Error("wiki_invalid_page_name");
   return t.endsWith(".md") ? t : t + ".md";
-}
-
-function clampLimit(limit) {
-  return Math.min(Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_LIMIT, MAX_LIMIT);
-}
-
-function toPageId(fileName) {
-  return fileName.replace(/\.md$/i, "");
 }
 
 function countMatches(content, query) {
@@ -426,21 +425,6 @@ function createWikiRepository(wikiDir) {
   return { listPages, readPage, search };
 }
 
-function parseBool(value, fallback) {
-  if (value === undefined || value === null || value === "") return fallback;
-  const normalized = String(value).trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  return fallback;
-}
-
-export function readWikiEngineConfig(env = process.env) {
-  const rawEngine = (env.RAG_ENGINE ?? LEGACY_ENGINE).toLowerCase();
-  const engine = rawEngine === SQLITE_ENGINE ? SQLITE_ENGINE : LEGACY_ENGINE;
-  const failOpen = parseBool(env.RAG_FAIL_OPEN, true);
-  return { engine, failOpen };
-}
-
 function readWikiRagBundleMetadata(extractDir) {
   if (!extractDir) return null;
   const metadataPath = path.join(extractDir, "skill", "knowledge", "wiki-rag.json");
@@ -483,19 +467,6 @@ function runWikiRagCli({ cliPath, args, env = process.env, cwd = process.cwd() }
     throw new Error(stderr || `wiki_rag_cli_failed:${args.join(" ")}`);
   }
   return (result.stdout ?? "").trim();
-}
-
-function normalizeSqliteRows(rows, limit) {
-  return rows.slice(0, clampLimit(limit)).map((row, index) => {
-    const pathText = typeof row.path === "string" ? row.path : "";
-    const page = toPageId(pathText);
-    const text = typeof row.text === "string" ? row.text : "";
-    return {
-      page,
-      score: clampLimit(limit) - index,
-      snippet: text.replace(/\s+/g, " ").trim().slice(0, 220),
-    };
-  });
 }
 
 export function createSqliteWikiSearchRunner({

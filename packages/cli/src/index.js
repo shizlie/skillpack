@@ -196,9 +196,11 @@ async function manualAttest(commandArgs, fetchImpl) {
   if (!serverUrl) {
     return { status: 200, body: { accepted: true, record } };
   }
+  const headers = buildServerHeaders(flags);
   const response = await fetchImpl(
     new Request(`${serverUrl}/v1/tsa/manual-attest`, {
       method: "POST",
+      headers,
       body: JSON.stringify({
         customerId: flags["customer-id"],
         seatId: flags["seat-id"] ?? "default",
@@ -218,12 +220,13 @@ async function latestAttestation(commandArgs, fetchImpl) {
   if (!serverUrl) throw new Error("missing_server_url");
   if (!flags["customer-id"]) throw new Error("missing_customer_id");
   const seatId = flags["seat-id"] ?? "default";
+  const headers = buildServerHeaders(flags);
   const response = await fetchImpl(
     new Request(
       `${serverUrl}/v1/tsa/manual-attestations/latest?customerId=${encodeURIComponent(
         flags["customer-id"]
       )}&seatId=${encodeURIComponent(seatId)}`,
-      { method: "GET" }
+      { method: "GET", headers }
     )
   );
   return { status: response.status, body: await response.json() };
@@ -285,6 +288,69 @@ async function issuePolicy(commandArgs, fetchImpl) {
   return { status: response.status, body: await response.json() };
 }
 
+async function createProvider(commandArgs, fetchImpl) {
+  const flags = parseArgMap(commandArgs);
+  const serverUrl = requireServerUrl(flags);
+  const headers = buildServerHeaders(flags);
+  if (!flags["provider-id"]) throw new Error("missing_provider_id");
+  const response = await fetchImpl(
+    new Request(`${serverUrl}/v1/providers`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        providerId: flags["provider-id"],
+        name: flags.name,
+      }),
+    })
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+async function createCustomer(commandArgs, fetchImpl) {
+  const flags = parseArgMap(commandArgs);
+  const serverUrl = requireServerUrl(flags);
+  const headers = buildServerHeaders(flags);
+  if (!flags["provider-id"]) throw new Error("missing_provider_id");
+  if (!flags["customer-id"]) throw new Error("missing_customer_id");
+  const response = await fetchImpl(
+    new Request(
+      `${serverUrl}/v1/providers/${encodeURIComponent(flags["provider-id"])}/customers`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          customerId: flags["customer-id"],
+          name: flags.name,
+        }),
+      }
+    )
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+async function createWorkspace(commandArgs, fetchImpl) {
+  const flags = parseArgMap(commandArgs);
+  const serverUrl = requireServerUrl(flags);
+  const headers = buildServerHeaders(flags);
+  if (!flags["workspace-id"]) throw new Error("missing_workspace_id");
+  if (!flags["provider-id"]) throw new Error("missing_provider_id");
+  if (!flags["customer-id"]) throw new Error("missing_customer_id");
+  const response = await fetchImpl(
+    new Request(`${serverUrl}/v1/workspaces`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        workspaceId: flags["workspace-id"],
+        providerId: flags["provider-id"],
+        customerId: flags["customer-id"],
+        name: flags.name,
+        status: flags.status,
+      }),
+    })
+  );
+  return { status: response.status, body: await response.json() };
+}
+
 async function syncPolicy(commandArgs, fetchImpl) {
   const flags = parseArgMap(commandArgs);
   const serverUrl = requireServerUrl(flags);
@@ -311,12 +377,27 @@ async function uploadMeter(commandArgs, fetchImpl) {
   const filePath = flags.file ?? flags["events-file"];
   if (!filePath) throw new Error("missing_file");
   const events = loadMeterEvents(filePath);
+  const context = {
+    providerId: flags["provider-id"],
+    customerId: flags["customer-id"],
+    workspaceId: flags["workspace-id"],
+    seatId: flags["seat-id"],
+    skillId: flags["skill-id"],
+    bundleId: flags["bundle-id"],
+    leaseId: flags["lease-id"],
+    leaseJti: flags["lease-jti"],
+    policyId: flags["policy-id"],
+  };
+  const normalizedContext = Object.fromEntries(
+    Object.entries(context).filter(([, value]) => typeof value === "string" && value.length > 0)
+  );
   const response = await fetchImpl(
     new Request(`${serverUrl}/v1/meter/upload`, {
       method: "POST",
       headers,
       body: JSON.stringify({
         workspaceId: flags["workspace-id"],
+        ...(Object.keys(normalizedContext).length > 0 ? { context: normalizedContext } : {}),
         events,
       }),
     })
@@ -329,8 +410,18 @@ async function usageSummary(commandArgs, fetchImpl) {
   const serverUrl = requireServerUrl(flags);
   const headers = buildServerHeaders(flags);
   const url = new URL(`${serverUrl}/v1/usage/summary`);
-  if (flags["workspace-id"]) {
-    url.searchParams.set("workspaceId", flags["workspace-id"]);
+  const filters = {
+    providerId: flags["provider-id"],
+    customerId: flags["customer-id"],
+    workspaceId: flags["workspace-id"],
+    seatId: flags["seat-id"],
+    skillId: flags["skill-id"],
+    bundleId: flags["bundle-id"],
+  };
+  for (const [key, value] of Object.entries(filters)) {
+    if (typeof value === "string" && value.length > 0) {
+      url.searchParams.set(key, value);
+    }
   }
   const response = await fetchImpl(
     new Request(url.toString(), {
@@ -438,6 +529,12 @@ export async function runSkillpackCli(
       result = await latestAttestation(args.slice(2), fetchImpl);
     } else if (group === "bundle" && action === "build") {
       result = buildBundle(args.slice(2));
+    } else if (group === "provider" && action === "create") {
+      result = await createProvider(args.slice(2), fetchImpl);
+    } else if (group === "customer" && action === "create") {
+      result = await createCustomer(args.slice(2), fetchImpl);
+    } else if (group === "workspace" && action === "create") {
+      result = await createWorkspace(args.slice(2), fetchImpl);
     } else if (group === "policy" && action === "issue") {
       result = await issuePolicy(args.slice(2), fetchImpl);
     } else if (group === "policy" && action === "sync") {
@@ -448,7 +545,7 @@ export async function runSkillpackCli(
       result = await usageSummary(args.slice(2), fetchImpl);
     } else {
       io.stderr.write(
-        "usage: skillpack license issue|verify ... OR skillpack tsa manual-attest|latest-attestation ... OR skillpack bundle build ... OR skillpack policy issue|sync ... OR skillpack meter upload ... OR skillpack usage summary ...\n"
+        "usage: skillpack license issue|verify ... OR skillpack tsa manual-attest|latest-attestation ... OR skillpack bundle build ... OR skillpack provider create ... OR skillpack customer create ... OR skillpack workspace create ... OR skillpack policy issue|sync ... OR skillpack meter upload ... OR skillpack usage summary ...\n"
       );
       return 2;
     }

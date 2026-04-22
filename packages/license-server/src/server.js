@@ -6,9 +6,13 @@ import {
   verifyLeaseToken,
 } from "@skillpack/crypto";
 import {
+  validateAcceptedUsageSummaryRow,
+  validateCustomerCreateContract,
   validateLeasePayload,
-  validateMeterEvent,
+  validateMeterUploadContract,
   validatePolicySnapshot,
+  validateProviderCreateContract,
+  validateWorkspaceCreateContract,
 } from "@skillpack/protocol";
 import { createManualTimeAttestationContract, createTsaMonitor } from "@skillpack/tsa";
 import { createInMemoryLeaseStore } from "./storage.js";
@@ -50,11 +54,26 @@ function readApiKey(request) {
   return request.headers.get("x-api-key") ?? request.headers.get("X-Api-Key");
 }
 
+function getProviderIdForCustomerRoute(pathname) {
+  const match = /^\/v1\/providers\/([^/]+)\/customers$/.exec(pathname);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
 function isManagementRoute(request, pathname) {
+  if (request.method === "POST" && pathname === "/v1/providers") return true;
+  if (request.method === "POST" && pathname === "/v1/workspaces") return true;
+  if (request.method === "POST" && getProviderIdForCustomerRoute(pathname)) return true;
   if (request.method === "POST" && pathname === "/v1/policies/issue") return true;
   if (request.method === "POST" && pathname === "/v1/policies/sync") return true;
   if (request.method === "POST" && pathname === "/v1/meter/upload") return true;
   if (request.method === "GET" && pathname === "/v1/usage/summary") return true;
+  if (request.method === "POST" && pathname === "/v1/tsa/manual-attest") return true;
+  if (request.method === "GET" && pathname === "/v1/tsa/manual-attestations/latest") return true;
   return false;
 }
 
@@ -79,13 +98,54 @@ export function createLicenseFetchHandler({
         return json({ error: "management_api_key_not_configured" }, 503);
       }
       const providedApiKey = readApiKey(request);
-      if (providedApiKey !== managementApiKey) {
+      const hashKey = (k) => crypto.createHash("sha256").update(k).digest();
+      const keyValid =
+        typeof providedApiKey === "string" &&
+        crypto.timingSafeEqual(hashKey(providedApiKey), hashKey(managementApiKey));
+      if (!keyValid) {
         return json({ error: "unauthorized" }, 401);
       }
     }
 
     if (request.method === "GET" && url.pathname === "/healthz") {
       return json({ ok: true, service: "license-server" });
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/providers") {
+      try {
+        const body = await readBody(request);
+        const provider = validateProviderCreateContract(body);
+        const saveProvider = getStoreMethod(leaseStore, "saveProvider");
+        const saved = await saveProvider(provider);
+        return json({ accepted: true, provider: saved });
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 400);
+      }
+    }
+
+    const providerIdForCustomerRoute = getProviderIdForCustomerRoute(url.pathname);
+    if (request.method === "POST" && providerIdForCustomerRoute) {
+      try {
+        const body = await readBody(request);
+        const customer = validateCustomerCreateContract(body);
+        const saveCustomer = getStoreMethod(leaseStore, "saveCustomer");
+        const saved = await saveCustomer(providerIdForCustomerRoute, customer);
+        return json({ accepted: true, customer: saved });
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 400);
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/workspaces") {
+      try {
+        const body = await readBody(request);
+        const workspace = validateWorkspaceCreateContract(body);
+        const saveWorkspace = getStoreMethod(leaseStore, "saveWorkspace");
+        const saved = await saveWorkspace(workspace);
+        return json({ accepted: true, workspace: saved });
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 400);
+      }
     }
 
     if (request.method === "POST" && url.pathname === "/v1/leases/issue") {
@@ -103,7 +163,7 @@ export function createLicenseFetchHandler({
         if (typeof customerId !== "string" || customerId.length === 0) {
           throw new Error("issue_missing_customer_id");
         }
-        const previousCounter = leaseStore.getLatestLeaseCounter(
+        const previousCounter = await leaseStore.getLatestLeaseCounter(
           customerId,
           seatId
         );
@@ -124,7 +184,7 @@ export function createLicenseFetchHandler({
         };
         validateLeasePayload(payload);
         const leaseToken = createLeaseToken(payload, signingPrivateKeyPem);
-        leaseStore.updateLatestLeaseCounter(customerId, seatId, nextCounter);
+        await leaseStore.updateLatestLeaseCounter(customerId, seatId, nextCounter);
 
         let tsaState = null;
         if (Number.isInteger(body.lastTsaTokenAtSec)) {
@@ -147,7 +207,7 @@ export function createLicenseFetchHandler({
           nowSec: Number.isInteger(body.nowSec) ? body.nowSec : nowSec,
         });
         const seatId = verified.seatId ?? "default";
-        const latest = leaseStore.getLatestLeaseCounter(verified.sub, seatId);
+        const latest = await leaseStore.getLatestLeaseCounter(verified.sub, seatId);
         if (
           Number.isInteger(latest) &&
           verified.leaseCounter < latest
@@ -155,7 +215,7 @@ export function createLicenseFetchHandler({
           throw new Error("lease_counter_rewind_detected");
         }
         if (!Number.isInteger(latest) || verified.leaseCounter > latest) {
-          leaseStore.updateLatestLeaseCounter(
+          await leaseStore.updateLatestLeaseCounter(
             verified.sub,
             seatId,
             verified.leaseCounter
@@ -172,7 +232,7 @@ export function createLicenseFetchHandler({
         const body = await readBody(request);
         const snapshot = validatePolicySnapshot(body.policy ?? body);
         const savePolicySnapshot = getStoreMethod(leaseStore, "savePolicySnapshot");
-        const saved = savePolicySnapshot(snapshot.workspaceId, snapshot);
+        const saved = await savePolicySnapshot(snapshot.workspaceId, snapshot);
         return json({ accepted: true, policy: saved });
       } catch (error) {
         return json({ accepted: false, error: error.message }, 400);
@@ -195,7 +255,7 @@ export function createLicenseFetchHandler({
           leaseStore,
           "getLatestPolicySnapshot"
         );
-        const latest = getLatestPolicySnapshot(workspaceId);
+        const latest = await getLatestPolicySnapshot(workspaceId);
         if (!latest) {
           return json({ notModified: true });
         }
@@ -209,61 +269,48 @@ export function createLicenseFetchHandler({
     }
 
     if (request.method === "POST" && url.pathname === "/v1/meter/upload") {
+      let validated;
       try {
         const body = await readBody(request);
-        const workspaceId = getRequiredString(
-          body,
-          "workspaceId",
-          "meter_upload_missing_workspace_id"
-        );
-        if (!Array.isArray(body.events)) {
-          throw new Error("meter_upload_missing_events");
-        }
-        const validated = body.events.map((event) => {
-          validateMeterEvent(event);
-          if (typeof event.seatId !== "string" || event.seatId.length === 0) {
-            throw new Error("meter_event_invalid_seat_id");
-          }
-          if (typeof event.tool !== "string" || event.tool.length === 0) {
-            throw new Error("meter_event_invalid_tool");
-          }
-          const usage = event.usage ?? { unit: event.unit, delta: event.delta };
-          if (usage?.unit !== "tool_call") {
-            throw new Error("meter_event_invalid_usage_unit");
-          }
-          if (!Number.isFinite(usage?.delta) || usage.delta <= 0) {
-            throw new Error("meter_event_invalid_usage_delta");
-          }
-          return { ...event, usage };
-        });
-
+        validated = validateMeterUploadContract(body);
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 400);
+      }
+      try {
         const appendMeterEvents = getStoreMethod(leaseStore, "appendMeterEvents");
-        appendMeterEvents(workspaceId, validated);
-
+        await appendMeterEvents(validated.events);
         let seqStart = null;
         let seqEnd = null;
-        for (const event of validated) {
-          if (!Number.isInteger(event.seq)) continue;
-          if (seqStart === null || event.seq < seqStart) seqStart = event.seq;
-          if (seqEnd === null || event.seq > seqEnd) seqEnd = event.seq;
+        for (const event of validated.events) {
+          if (!Number.isInteger(event.eventSeq)) continue;
+          if (seqStart === null || event.eventSeq < seqStart) seqStart = event.eventSeq;
+          if (seqEnd === null || event.eventSeq > seqEnd) seqEnd = event.eventSeq;
         }
         return json({
           accepted: true,
           ack: {
-            count: validated.length,
+            count: validated.events.length,
             range: seqStart === null ? null : { seqStart, seqEnd },
           },
         });
       } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
+        // Storage failure — idempotent, safe to retry the full upload file
+        return json({ accepted: false, error: "meter_batch_failed", retryable: true }, 500);
       }
     }
 
     if (request.method === "GET" && url.pathname === "/v1/usage/summary") {
       try {
-        const workspaceId = url.searchParams.get("workspaceId") ?? undefined;
         const getUsageSummary = getStoreMethod(leaseStore, "getUsageSummary");
-        const summary = getUsageSummary({ workspaceId });
+        const rows = await getUsageSummary({
+          providerId: url.searchParams.get("providerId") ?? undefined,
+          customerId: url.searchParams.get("customerId") ?? undefined,
+          workspaceId: url.searchParams.get("workspaceId") ?? undefined,
+          seatId: url.searchParams.get("seatId") ?? undefined,
+          skillId: url.searchParams.get("skillId") ?? undefined,
+          bundleId: url.searchParams.get("bundleId") ?? undefined,
+        });
+        const summary = rows.map(validateAcceptedUsageSummaryRow);
         return json({ summary });
       } catch (error) {
         return json({ error: error.message }, 400);
@@ -281,7 +328,7 @@ export function createLicenseFetchHandler({
         const seatId = body.seatId ?? "default";
         const record = attestationContract.createRecord(body);
         const storedRecord = { ...record, customerId, seatId };
-        leaseStore.addManualAttestation(storedRecord);
+        await leaseStore.addManualAttestation(storedRecord);
         return json({ accepted: true, record: storedRecord });
       } catch (error) {
         return json({ accepted: false, error: error.message }, 400);
@@ -298,7 +345,7 @@ export function createLicenseFetchHandler({
           throw new Error("manual_attestation_missing_customer_id");
         }
         const seatId = url.searchParams.get("seatId") ?? "default";
-        const record = leaseStore.getLatestManualAttestation(customerId, seatId);
+        const record = await leaseStore.getLatestManualAttestation(customerId, seatId);
         return json({ accepted: true, record });
       } catch (error) {
         return json({ accepted: false, error: error.message }, 400);

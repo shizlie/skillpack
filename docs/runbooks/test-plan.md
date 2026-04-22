@@ -19,6 +19,8 @@ In scope:
 
 - `@skillpack/cli`
 - `@skillpack/license-server`
+- `@skillpack/license-server-worker` (Cloudflare Worker + D1 storage)
+- `@skillpack/protocol` (commercial contract validation)
 - `@skillpack/runtime`
 - `@skillpack/wiki-mcp`
 - Wire-level interactions between them
@@ -65,6 +67,46 @@ Why this split:
 4. Retrieve latest attestation (`skillpack tsa latest-attestation`).
 5. Execute runtime with `tsaPolicy` + attestation.
 6. Assert runtime accepts only valid/fresh attestation and rejects stale/missing.
+
+### Journey D: Commercial hierarchy + Cloudflare D1 (no wrangler required)
+
+Tests the provider→customer→workspace management API and meter ingest pipeline backed by D1 storage. No `wrangler dev` needed — the worker exports a plain `fetch(request, env)` function, so tests call it directly with a mock D1 adapter backed by Bun's in-memory SQLite.
+
+1. Import worker and supply mock env: `{ DB: createTestD1Database(), SKILLPACK_MANAGEMENT_API_KEY, SKILLPACK_SIGNING_PRIVATE_KEY_PEM, SKILLPACK_SIGNING_PUBLIC_KEY_PEM }`.
+2. POST `/v1/providers` → assert provider created.
+3. POST `/v1/providers/:id/customers` → assert customer bound to provider.
+4. POST `/v1/workspaces` → assert workspace status `ACTIVE`.
+5. POST `/v1/meter/upload` → assert `accepted: true`, correct `ack.count`.
+6. GET `/v1/usage/summary` → assert totals aggregated by dimension.
+7. POST `/v1/policies/issue` + POST `/v1/policies/sync` → assert policy delivered/cached.
+
+Negative paths covered:
+- `POST /v1/providers/:id/customers` with unknown providerId → 400 `provider_not_found`
+- `POST /v1/workspaces` with unknown customerId → 400 `customer_not_found`
+- `POST /v1/workspaces` re-issued with different provider/customer for same workspaceId → 400 `workspace_identity_mismatch`
+- All management routes without `x-api-key` → 401
+
+Mock D1 pattern (no wrangler):
+
+```js
+import worker from "../src/index.js";
+
+const env = {
+  DB: createTestD1Database(),            // Bun SQLite wrapped in D1 interface
+  SKILLPACK_MANAGEMENT_API_KEY: "key",
+  SKILLPACK_SIGNING_PRIVATE_KEY_PEM: privateKeyPem,
+  SKILLPACK_SIGNING_PUBLIC_KEY_PEM: publicKeyPem,
+};
+const res = await worker.fetch(new Request("http://local/v1/providers", { ... }), env);
+```
+
+The `createTestD1Database()` helper wraps `new Database(":memory:")` with `{ prepare, exec, batch }` matching the D1 API. Lives in `packages/license-server-worker/test/worker.test.js`.
+
+Gate command:
+
+```bash
+bun test packages/license-server-worker
+```
 
 ### Journey C: Wiki via MCP lifecycle
 
@@ -159,6 +201,8 @@ On failure:
 2. [x] Add `package.json` script: `"test:e2e": "bun test e2e"`.
 3. [ ] Add CI workflow step for `test:e2e`.
 4. [x] Keep `browse` lane documented as optional until UI exists.
+5. [x] Add Journey D: commercial hierarchy + D1 worker tests (no wrangler needed).
+6. [x] Add `"test": "bun test"` to `packages/license-server-worker/package.json`.
 
 ## Skill Distribution Test Matrix (`verticals/laws-consultant`)
 

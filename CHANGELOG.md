@@ -14,6 +14,26 @@ The format is based on Keep a Changelog.
   - SHA-256 checksum files for all new artifacts
 - Added end-user release install/verification guide in `README.md` for binary and source distribution paths.
 
+## [0.4.0.0] - 2026-04-22
+
+### Added
+
+- **`@skillpack/license-server-worker`** — new Cloudflare Worker package. Wraps the license server behind a Worker + D1 binding so vendors can deploy to Cloudflare's edge with zero infrastructure. Supports direct `worker.fetch(request, env)` testing without `wrangler dev`.
+- **Commercial hierarchy API** — provider/customer/workspace management endpoints (`POST /v1/providers`, `POST /v1/providers/:id/customers`, `POST /v1/workspaces`) with full hierarchy enforcement: customer must belong to provider, workspace must bind to a known customer, re-assigning a workspace to a different provider/customer is rejected with `workspace_identity_mismatch`.
+- **Cloudflare D1 storage adapter** (`packages/license-server/src/storage-d1.js`) — full parity with the SQLite adapter, backed by D1's SQL API. Includes idempotent meter event ingest via `INSERT OR IGNORE` with a composite `UNIQUE(event_id, event_seq, lease_jti)` dedup constraint.
+- **Protocol constants** `USAGE_UNIT_TOOL_CALL` and `WORKSPACE_STATUS_ACTIVE` exported from `@skillpack/protocol`, replacing inline string literals across all storage adapters.
+- **`wiki-rag-utils.mjs`** extracted from `runtime/src/server.mjs` — shared module for RAG engine configuration (`DEFAULT_LIMIT`, `MAX_LIMIT`, `SQLITE_ENGINE`, `LEGACY_ENGINE`, `parseBool`, `clampLimit`, `toPageId`, `normalizeSqliteRows`, `readWikiEngineConfig`).
+- **CLI commercial commands** — `provider create`, `customer create`, `workspace create`, `meter upload` subcommands for managing the commercial hierarchy from the terminal.
+- **Journey D** added to `docs/runbooks/test-plan.md` — documents the commercial hierarchy + D1 test pattern with a mock D1 adapter backed by Bun in-memory SQLite, requiring no `wrangler dev`.
+
+### Changed
+
+- **TSA routes auth-hardened** — `POST /v1/tsa/manual-attest` and `GET /v1/tsa/manual-attestations/latest` now require the management API key (`x-api-key`), consistent with all other management routes.
+- **Worker handler caching** — switched from module-level singleton to `WeakMap` keyed on `env`. Matches CF Worker isolate semantics (stable `env` reference per isolate lifetime) and gives correct test isolation (each test creates a new `env` object).
+- **Management API key comparison** now uses SHA-256 digest comparison via `crypto.timingSafeEqual` to avoid leaking key length via timing.
+- **Meter upload error response** — storage failures now return `{ accepted: false, error: "meter_batch_failed", retryable: true }` with HTTP 500, distinct from validation errors (HTTP 400). Meter upload is idempotent: safe to retry the entire file on failure.
+- **`eventId` encoding** uses `encodeURIComponent` on each composite segment to prevent colon-collision when workspace or seat IDs contain `:`.
+
 ## [0.3.0.1] - 2026-04-22
 
 ### Added

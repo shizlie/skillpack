@@ -1,0 +1,207 @@
+import { expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
+
+import { createD1LeaseStore } from "../src/storage-d1.js";
+
+function createTestD1Database() {
+  const sqlite = new Database(":memory:");
+
+  function statement(sql, args = []) {
+    return {
+      bind(...nextArgs) {
+        return statement(sql, nextArgs);
+      },
+      async run() {
+        sqlite.query(sql).run(...args);
+        return { success: true };
+      },
+      async first() {
+        const row = sqlite.query(sql).get(...args);
+        return row ?? null;
+      },
+      async all() {
+        const rows = sqlite.query(sql).all(...args);
+        return { results: rows };
+      },
+    };
+  }
+
+  return {
+    prepare(sql) {
+      return statement(sql);
+    },
+    async exec(sql) {
+      sqlite.exec(sql);
+      return { success: true };
+    },
+    async batch(statements) {
+      const out = [];
+      for (const stmt of statements) {
+        out.push(await stmt.run());
+      }
+      return out;
+    },
+    close() {
+      sqlite.close(false);
+    },
+  };
+}
+
+test("d1 store: commercial hierarchy + usage summary", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+
+  const provider = await store.saveProvider({ providerId: "prov-1", name: "Provider One" });
+  expect(provider.providerId).toBe("prov-1");
+
+  const customer = await store.saveCustomer("prov-1", {
+    customerId: "cust-1",
+    name: "Customer One",
+  });
+  expect(customer.customerId).toBe("cust-1");
+
+  const workspace = await store.saveWorkspace({
+    workspaceId: "ws-1",
+    providerId: "prov-1",
+    customerId: "cust-1",
+    name: "Workspace One",
+  });
+  expect(workspace.status).toBe("ACTIVE");
+
+  await store.appendMeterEvents([
+    {
+      eventId: "ws-1:seat-1:jti-1:1",
+      providerId: "prov-1",
+      customerId: "cust-1",
+      workspaceId: "ws-1",
+      seatId: "seat-1",
+      skillId: "laws-consultant",
+      bundleId: "laws-consultant-1.0.0",
+      leaseId: null,
+      leaseJti: "jti-1",
+      policyId: "pol-1",
+      tool: "wiki_search",
+      eventKind: "tool_call",
+      usage: { unit: "tool_call", delta: 2 },
+      eventSeq: 1,
+      eventHash: null,
+      prevHash: "h0",
+      eventAtSec: 1_800_000_000,
+      rawEvent: { seq: 1 },
+    },
+  ]);
+
+  const summary = await store.getUsageSummary({
+    providerId: "prov-1",
+    workspaceId: "ws-1",
+  });
+
+  expect(summary).toEqual([
+    {
+      providerId: "prov-1",
+      customerId: "cust-1",
+      workspaceId: "ws-1",
+      seatId: "seat-1",
+      skillId: "laws-consultant",
+      bundleId: "laws-consultant-1.0.0",
+      leaseJti: "jti-1",
+      tool: "wiki_search",
+      unit: "tool_call",
+      totalCalls: 2,
+    },
+  ]);
+
+  db.close();
+});
+
+test("d1 store: meter idempotency with INSERT OR IGNORE", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+
+  await store.appendMeterEvents([
+    {
+      eventId: "ws-1:seat-1::1",
+      providerId: "prov-1",
+      customerId: "cust-1",
+      workspaceId: "ws-1",
+      seatId: "seat-1",
+      skillId: null,
+      bundleId: null,
+      leaseId: null,
+      leaseJti: null,
+      policyId: null,
+      tool: "wiki_search",
+      eventKind: "tool_call",
+      usage: { unit: "tool_call", delta: 1 },
+      eventSeq: 1,
+      eventHash: null,
+      prevHash: "h0",
+      eventAtSec: 1_800_000_001,
+      rawEvent: { seq: 1 },
+    },
+  ]);
+
+  await store.appendMeterEvents([
+    {
+      eventId: "ws-1:seat-1::1",
+      providerId: "prov-1",
+      customerId: "cust-1",
+      workspaceId: "ws-1",
+      seatId: "seat-1",
+      skillId: null,
+      bundleId: null,
+      leaseId: null,
+      leaseJti: null,
+      policyId: null,
+      tool: "wiki_search",
+      eventKind: "tool_call",
+      usage: { unit: "tool_call", delta: 1 },
+      eventSeq: 1,
+      eventHash: null,
+      prevHash: "h0",
+      eventAtSec: 1_800_000_001,
+      rawEvent: { seq: 1 },
+    },
+  ]);
+
+  const summary = await store.getUsageSummary({ workspaceId: "ws-1" });
+  expect(summary).toHaveLength(1);
+  expect(summary[0].totalCalls).toBe(1);
+
+  db.close();
+});
+
+test("d1 store: saveCustomer rejects unknown provider", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+
+  await expect(
+    store.saveCustomer("nonexistent-provider", { customerId: "cust-1" })
+  ).rejects.toThrow("provider_not_found");
+
+  db.close();
+});
+
+test("d1 store: saveWorkspace rejects unknown provider", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+
+  await expect(
+    store.saveWorkspace({ workspaceId: "ws-1", providerId: "nonexistent", customerId: "cust-1" })
+  ).rejects.toThrow("provider_not_found");
+
+  db.close();
+});
+
+test("d1 store: saveWorkspace rejects unknown customer", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+
+  await store.saveProvider({ providerId: "prov-1", name: "P1" });
+
+  await expect(
+    store.saveWorkspace({ workspaceId: "ws-1", providerId: "prov-1", customerId: "nonexistent" })
+  ).rejects.toThrow("customer_not_found");
+
+  db.close();
+});

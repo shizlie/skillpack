@@ -84,6 +84,7 @@ Open core. Runtime + CLI: open source (Apache 2.0 planned). Hosted license serve
 - `CLAUDE.md`: contributor/project operating guide
 - `NOTES.md`: research notes and thesis context
 - `TEST_PLAN.md`: AI-first unit + E2E test strategy and execution policy
+- `docs/runbooks/cloudflare-d1-deploy.md`: Cloudflare Worker + D1 deployment and `.mcpb` usage backhaul verification
 
 ## Test execution
 
@@ -186,6 +187,36 @@ Run the deterministic local value-loop demo:
 
 Runbook: `docs/runbooks/policy-loop-demo.md`
 
+## Cloudflare Worker + D1 deploy (implemented)
+
+New package: `packages/license-server-worker` (Hono + D1).
+
+Quick path:
+
+1. Validate locally first:
+
+```bash
+./scripts/demo-cloudflare-local-e2e.sh
+```
+
+2. Configure D1 + secrets via `wrangler` in `packages/license-server-worker/`
+3. Deploy worker
+4. Run deployed end-to-end smoke:
+
+```bash
+SERVER_URL="https://<worker>.workers.dev" \
+API_KEY="<management-key>" \
+./scripts/demo-cloudflare-e2e.sh
+```
+
+Continuous meter sync helper:
+
+```bash
+./scripts/sync-meter-loop.sh
+```
+
+Full runbook: `docs/runbooks/cloudflare-d1-deploy.md`
+
 ## Policy loop demo (implemented)
 
 CLI control commands now include:
@@ -227,7 +258,7 @@ This command:
 
 - treats `verticals/laws-consultant/` as the Agent Skill root (`SKILL.md` at top-level)
 - stages a safe bundle source (`SKILL.md` + archived `knowledge/wiki.tar.gz`) to avoid shipping plain wiki markdown files
-- embeds `verticals/laws-consultant/distribution/license.dev.json`
+- embeds `verticals/laws-consultant/distribution/license.dev.json` when present, otherwise uses a generated dev payload
 - signs with a local dev key at `verticals/laws-consultant/distribution/keys/dev-private.pem` (auto-generated if missing)
 - outputs:
     - `.mcpb` to `dist/skills/`
