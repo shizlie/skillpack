@@ -75,6 +75,7 @@ function isManagementRoute(request, pathname) {
   ) {
     return true;
   }
+  if (request.method === "POST" && pathname === "/v1/leases/issue") return true;
   if (request.method === "POST" && pathname === "/v1/policies/issue") return true;
   if (request.method === "POST" && pathname === "/v1/policies/sync") return true;
   if (request.method === "POST" && pathname === "/v1/meter/upload") return true;

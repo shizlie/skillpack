@@ -9,14 +9,17 @@ import { createSqliteLeaseStore } from "../src/storage-sqlite.js";
 
 test("issue + verify lease roundtrip works", async () => {
   const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-issue-verify-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: mgmtKey,
   });
 
   const issueRes = await fetch(
     new Request("http://local/v1/leases/issue", {
       method: "POST",
+      headers: { "x-api-key": mgmtKey },
       body: JSON.stringify({
         customerId: "cust-1",
         vendorId: "vendor-1",
@@ -47,14 +50,17 @@ test("issue + verify lease roundtrip works", async () => {
 
 test("verify rejects lease counter rewind", async () => {
   const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-rewind-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: mgmtKey,
   });
 
   const issue1 = await fetch(
     new Request("http://local/v1/leases/issue", {
       method: "POST",
+      headers: { "x-api-key": mgmtKey },
       body: JSON.stringify({ customerId: "cust-2", nowSec: 1_800_000_000 }),
     })
   );
@@ -63,6 +69,7 @@ test("verify rejects lease counter rewind", async () => {
   const issue2 = await fetch(
     new Request("http://local/v1/leases/issue", {
       method: "POST",
+      headers: { "x-api-key": mgmtKey },
       body: JSON.stringify({ customerId: "cust-2", nowSec: 1_800_000_100 }),
     })
   );
@@ -116,14 +123,17 @@ test("manual TSA attestation endpoint accepts contract payload", async () => {
 
 test("lease issue exposes TSA warning state when token is near expiry", async () => {
   const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-tsa-warning-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: mgmtKey,
   });
   const now = 1_800_000_000;
   const res = await fetch(
     new Request("http://local/v1/leases/issue", {
       method: "POST",
+      headers: { "x-api-key": mgmtKey },
       body: JSON.stringify({
         customerId: "cust-3",
         nowSec: now,

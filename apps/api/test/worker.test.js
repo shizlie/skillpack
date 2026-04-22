@@ -284,7 +284,7 @@ test("worker: accepts signing keys from *_BASE64 env vars", async () => {
   const res = await worker.fetch(
     new Request("http://local/v1/leases/issue", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-api-key": "mgmt-key" },
       body: JSON.stringify({
         customerId: "cust-1",
         seatId: "seat-1",

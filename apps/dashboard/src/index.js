@@ -99,10 +99,11 @@ async function proxyApiRequest(c) {
   const apiKey = getRequiredEnvString(c.env, "SKILLPACK_API_MANAGEMENT_KEY");
 
   const incoming = new URL(c.req.raw.url);
-  const upstreamUrl = new URL(
-    incoming.pathname.replace(/^\/api/, "") + incoming.search,
-    apiBaseUrl
-  );
+  const strippedPath = incoming.pathname.slice("/api".length) || "/";
+  if (strippedPath.includes("..")) {
+    return c.json({ error: "invalid_path" }, 400);
+  }
+  const upstreamUrl = new URL(strippedPath + incoming.search, apiBaseUrl);
 
   const headers = new Headers();
   const contentType = c.req.raw.headers.get("content-type");
