@@ -29,6 +29,7 @@ const releaseBundleFile = path.join(releaseDir, `${bundleId}-${version}.mcpb`);
 const releasePublicKeyFile = path.join(releaseDir, `${bundleId}-${version}.public.pem`);
 const releaseSkillDir = path.join(releaseDir, "skill", bundleId);
 const releaseRuntimeDir = path.join(releaseDir, "runtime");
+const releaseRuntimeWikiRagSrcDir = path.join(releaseRuntimeDir, "wiki-rag-src");
 const releaseVerifyScript = path.join(releaseRuntimeDir, "verify-bundle.mjs");
 const releaseInstallScript = path.join(releaseRuntimeDir, "install-skill.sh");
 const releaseReceiverScript = path.join(
@@ -118,6 +119,46 @@ if (wikiTar.status !== 0) {
   throw new Error(`wiki_archive_failed:${wikiTar.stderr?.trim() || "unknown"}`);
 }
 
+const wikiSourceDir = path.join(verticalRoot, "wiki");
+const preindexDbPath = path.join(inputDir, "knowledge", "wiki-rag.db");
+const preindexMetadataPath = path.join(inputDir, "knowledge", "wiki-rag.json");
+const preindexResult = spawnSync(
+  "bun",
+  [
+    "wiki-rag/src/cli.ts",
+    "index",
+    "--db",
+    preindexDbPath,
+    "--root",
+    wikiSourceDir,
+  ],
+  {
+    cwd: repoRoot,
+    encoding: "utf8",
+  }
+);
+
+const preindexReady = preindexResult.status === 0;
+if (!preindexReady) {
+  fs.rmSync(preindexDbPath, { force: true });
+  process.stderr.write(
+    `[WARN] wiki preindex failed; runtime will fail-open to legacy engine: ${(preindexResult.stderr || "").trim()}\n`
+  );
+}
+fs.writeFileSync(
+  preindexMetadataPath,
+  JSON.stringify(
+    {
+      engine: preindexReady ? "sqlite" : "legacy",
+      preindexReady,
+      fallbackEngine: "legacy",
+      generatedAt: new Date().toISOString(),
+    },
+    null,
+    2
+  ) + "\n"
+);
+
 const args = [
   "run",
   "packages/cli/src/cli.js",
@@ -168,16 +209,21 @@ const releaseServerUtilScript = path.join(releaseRuntimeDir, "server-util.mjs");
 fs.copyFileSync(serverUtilMjsSource, releaseServerUtilScript);
 fs.chmodSync(releaseServerUtilScript, 0o755);
 
+const wikiRagSourceDir = path.join(repoRoot, "wiki-rag", "src");
+copyDirRecursively(wikiRagSourceDir, releaseRuntimeWikiRagSrcDir);
+
 const bundleSha = sha256Hex(releaseBundleFile);
 const pubKeySha = sha256Hex(releasePublicKeyFile);
 const serverMjsSha = sha256Hex(releaseServerScript);
 const serverUtilMjsSha = sha256Hex(releaseServerUtilScript);
+const runtimeWikiCliSha = sha256Hex(path.join(releaseRuntimeWikiRagSrcDir, "cli.ts"));
 fs.writeFileSync(
   releaseChecksumsFile,
   `${bundleSha}  ${path.basename(releaseBundleFile)}\n` +
   `${pubKeySha}  ${path.basename(releasePublicKeyFile)}\n` +
   `${serverMjsSha}  runtime/server.mjs\n` +
-  `${serverUtilMjsSha}  runtime/server-util.mjs\n`
+  `${serverUtilMjsSha}  runtime/server-util.mjs\n` +
+  `${runtimeWikiCliSha}  runtime/wiki-rag-src/cli.ts\n`
 );
 
 const verifyScript = `#!/usr/bin/env node
@@ -383,6 +429,7 @@ cp "$BUNDLE_FILE" "$BUNDLE_DEST/"
 cp "$PUBKEY_FILE" "$BUNDLE_DEST/"
 cp runtime/server.mjs "$BUNDLE_DEST/"
 cp runtime/server-util.mjs "$BUNDLE_DEST/"
+rsync -a runtime/wiki-rag-src/ "$BUNDLE_DEST/wiki-rag-src/"
 
 echo "installed skill:      ${'$'}SKILL_DEST"
 echo "staged sealed bundle: ${'$'}BUNDLE_DEST/${'$'}BUNDLE_FILE"

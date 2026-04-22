@@ -14,6 +14,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import readline from "node:readline";
+import { fileURLToPath } from "node:url";
 import {
   toBase64Url,
   fromBase64Url,
@@ -27,6 +28,8 @@ import {
 
 const GENESIS_HASH = "GENESIS";
 const DEFAULT_GRACE_SEC = 72 * 60 * 60;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function validateLeasePayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -357,11 +360,17 @@ export function evaluatePolicyToolCallDecision({
 
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 20;
+const SQLITE_ENGINE = "sqlite";
+const LEGACY_ENGINE = "legacy";
 
 function normalizePageName(name) {
   const t = (typeof name === "string" ? name : "").trim();
   if (!t) throw new Error("wiki_invalid_page_name");
   return t.endsWith(".md") ? t : t + ".md";
+}
+
+function clampLimit(limit) {
+  return Math.min(Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_LIMIT, MAX_LIMIT);
 }
 
 function toPageId(fileName) {
@@ -403,7 +412,7 @@ function createWikiRepository(wikiDir) {
   }
   function search(query, limit = DEFAULT_LIMIT) {
     if (typeof query !== "string" || !query.trim()) throw new Error("wiki_missing_query");
-    const clamp = Math.min(Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_LIMIT, MAX_LIMIT);
+    const clamp = clampLimit(limit);
     const scored = [];
     for (const file of listPages()) {
       const content = readPage(file);
@@ -415,6 +424,212 @@ function createWikiRepository(wikiDir) {
     return scored.slice(0, clamp);
   }
   return { listPages, readPage, search };
+}
+
+function parseBool(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+export function readWikiEngineConfig(env = process.env) {
+  const rawEngine = (env.RAG_ENGINE ?? LEGACY_ENGINE).toLowerCase();
+  const engine = rawEngine === SQLITE_ENGINE ? SQLITE_ENGINE : LEGACY_ENGINE;
+  const failOpen = parseBool(env.RAG_FAIL_OPEN, true);
+  return { engine, failOpen };
+}
+
+function readWikiRagBundleMetadata(extractDir) {
+  if (!extractDir) return null;
+  const metadataPath = path.join(extractDir, "skill", "knowledge", "wiki-rag.json");
+  if (!fs.existsSync(metadataPath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function defaultWikiRagCliPath() {
+  const configuredPath = (process.env.RAG_WIKI_RAG_CLI ?? "").trim();
+  if (configuredPath) {
+    return path.resolve(configuredPath);
+  }
+
+  const runtimeEmbeddedPath = path.join(__dirname, "wiki-rag-src", "cli.ts");
+  if (fs.existsSync(runtimeEmbeddedPath)) {
+    return runtimeEmbeddedPath;
+  }
+
+  return path.resolve(process.cwd(), "wiki-rag", "src", "cli.ts");
+}
+
+function runWikiRagCli({ cliPath, args, env = process.env, cwd = process.cwd() }) {
+  const result = spawnSync("bun", [cliPath, ...args], {
+    cwd,
+    env,
+    encoding: "utf8",
+  });
+  if (result.error) {
+    const code = result.error.code ? ` (${result.error.code})` : "";
+    throw new Error(`wiki_rag_cli_spawn_failed${code}: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const stderr = (result.stderr ?? "").trim();
+    throw new Error(stderr || `wiki_rag_cli_failed:${args.join(" ")}`);
+  }
+  return (result.stdout ?? "").trim();
+}
+
+function normalizeSqliteRows(rows, limit) {
+  return rows.slice(0, clampLimit(limit)).map((row, index) => {
+    const pathText = typeof row.path === "string" ? row.path : "";
+    const page = toPageId(pathText);
+    const text = typeof row.text === "string" ? row.text : "";
+    return {
+      page,
+      score: clampLimit(limit) - index,
+      snippet: text.replace(/\s+/g, " ").trim().slice(0, 220),
+    };
+  });
+}
+
+export function createSqliteWikiSearchRunner({
+  wikiDir,
+  extractDir,
+  dbPath,
+  env = process.env,
+  cwd = process.cwd(),
+  cliPath = defaultWikiRagCliPath(),
+  metadata = readWikiRagBundleMetadata(extractDir),
+} = {}) {
+  const resolvedDbPath =
+    dbPath ??
+    (metadata?.preindexReady
+      ? path.join(extractDir, "skill", "knowledge", "wiki-rag.db")
+      : path.join(cwd, ".wiki-rag", "wiki-rag.db"));
+  const simulateFailure = (env.RAG_SIMULATE_FAILURE ?? "").toLowerCase();
+  let isReady = false;
+
+  function maybeFail(stage) {
+    if (!simulateFailure) return;
+    if (simulateFailure === stage || (stage === "query" && simulateFailure === "query_parse")) {
+      throw new Error(`sqlite_simulated_failure:${simulateFailure}`);
+    }
+  }
+
+  function ensureReady() {
+    if (isReady) return;
+    maybeFail("db_missing");
+    maybeFail("db_corrupt");
+    maybeFail("io_error");
+    maybeFail("vector_extension_unavailable");
+    fs.mkdirSync(path.dirname(resolvedDbPath), { recursive: true });
+
+    const needsIndex = !fs.existsSync(resolvedDbPath) || metadata?.preindexReady !== true;
+    if (needsIndex) {
+      runWikiRagCli({
+        cliPath,
+        cwd,
+        env,
+        args: ["index", "--db", resolvedDbPath, "--root", wikiDir],
+      });
+    }
+    isReady = true;
+  }
+
+  return function sqliteSearch(query, limit = DEFAULT_LIMIT) {
+    maybeFail("query_parse");
+    maybeFail("query");
+    ensureReady();
+    const out = runWikiRagCli({
+      cliPath,
+      cwd,
+      env,
+      args: ["query", "--db", resolvedDbPath, "--query", query, "--limit", String(clampLimit(limit))],
+    });
+    const parsed = JSON.parse(out || "{}");
+    return normalizeSqliteRows(Array.isArray(parsed.hits) ? parsed.hits : [], limit);
+  };
+}
+
+export function createWikiSearchWithFallback({
+  engine,
+  failOpen,
+  legacySearch,
+  sqliteSearch,
+  log = (message) => process.stderr.write(`${message}\n`),
+}) {
+  return function search(query, limit) {
+    const out = runWikiSearchWithFallbackDetailed({
+      engine,
+      failOpen,
+      legacySearch,
+      sqliteSearch,
+      query,
+      limit,
+      log,
+    });
+    return out.results;
+  };
+}
+
+export function runWikiSearchWithFallbackDetailed({
+  engine,
+  failOpen,
+  legacySearch,
+  sqliteSearch,
+  query,
+  limit,
+  log = (message) => process.stderr.write(`${message}\n`),
+}) {
+  if (engine !== SQLITE_ENGINE) {
+    return {
+      results: legacySearch(query, limit),
+      pathUsed: LEGACY_ENGINE,
+      fallbackUsed: false,
+      fallbackReason: null,
+    };
+  }
+  try {
+    return {
+      results: sqliteSearch(query, limit),
+      pathUsed: SQLITE_ENGINE,
+      fallbackUsed: false,
+      fallbackReason: null,
+    };
+  } catch (error) {
+    if (!failOpen) {
+      throw error;
+    }
+    const reason = error instanceof Error ? error.message : String(error);
+    log(`[WARN] sqlite wiki search failed, falling back to legacy: ${reason}`);
+    if (engine !== SQLITE_ENGINE) {
+      return {
+        results: legacySearch(query, limit),
+        pathUsed: LEGACY_ENGINE,
+        fallbackUsed: false,
+        fallbackReason: null,
+      };
+    }
+    return {
+      results: legacySearch(query, limit),
+      pathUsed: LEGACY_ENGINE,
+      fallbackUsed: true,
+      fallbackReason: reason,
+    };
+  }
+}
+
+function formatWikiSearchResult(results) {
+  if (results.length === 0) return "No wiki matches found.";
+  return results
+    .map((r, i) => `${i + 1}. ${r.page} (score=${r.score})\n${r.snippet}`)
+    .join("\n\n");
 }
 
 // ── MCP JSON-RPC helpers ──────────────────────────────────────────────────────
@@ -618,6 +833,14 @@ if (!fs.existsSync(wikiDir)) {
 fs.rmSync(extractDir, { recursive: true, force: true });
 
 const wiki = createWikiRepository(wikiDir);
+const ragConfig = readWikiEngineConfig(process.env);
+const ragMetadata = readWikiRagBundleMetadata(extractDir);
+const sqliteSearch = createSqliteWikiSearchRunner({
+  wikiDir,
+  extractDir,
+  env: process.env,
+  metadata: ragMetadata,
+});
 
 // ── meter setup ───────────────────────────────────────────────────────────────
 
@@ -789,6 +1012,11 @@ rl.on("line", (line) => {
             description: "Read one wiki page by name. License-metered.",
             inputSchema: { type: "object", properties: { page: { type: "string" } }, required: ["page"] },
           },
+          {
+            name: "wiki_runtime_info",
+            description: "Get runtime lease/bundle metadata from the loaded MCP bundle.",
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+          },
         ],
       });
     } else if (method === "tools/call") {
@@ -840,10 +1068,16 @@ rl.on("line", (line) => {
       incrementToolUsageCount(runtimeSeatId, toolName);
 
       if (toolName === "wiki_search") {
-        const results = wiki.search(args.query, args.limit);
-        const bodyText = results.length === 0
-          ? "No wiki matches found."
-          : results.map((r, i) => `${i + 1}. ${r.page} (score=${r.score})\n${r.snippet}`).join("\n\n");
+        const retrieval = runWikiSearchWithFallbackDetailed({
+          engine: ragConfig.engine,
+          failOpen: ragConfig.failOpen,
+          legacySearch: (query, limit) => wiki.search(query, limit),
+          sqliteSearch,
+          query: args.query,
+          limit: args.limit,
+        });
+        const results = retrieval.results;
+        const bodyText = formatWikiSearchResult(results);
         const warningText = policyDecision.decision === "ALLOW_WITH_WARNING"
           ? `[POLICY WARNING] ${policyDecision.reasonCodes.join(", ")}`
           : null;
@@ -852,8 +1086,14 @@ rl.on("line", (line) => {
         response = ok(id, {
           content: [{ type: "text", text }],
           isError: false,
-          metadata:
-            policyDecision.decision === "ALLOW_WITH_WARNING"
+          metadata: {
+            retrieval: {
+              engineRequested: ragConfig.engine,
+              pathUsed: retrieval.pathUsed,
+              fallbackUsed: retrieval.fallbackUsed,
+              fallbackReason: retrieval.fallbackReason,
+            },
+            ...(policyDecision.decision === "ALLOW_WITH_WARNING"
               ? {
                   policy: {
                     decision: policyDecision.decision,
@@ -861,7 +1101,8 @@ rl.on("line", (line) => {
                     policyId: policySnapshot?.policyId,
                   },
                 }
-              : undefined,
+              : {}),
+          },
         });
       } else if (toolName === "wiki_read_page") {
         const bodyText = wiki.readPage(args.page);
@@ -883,6 +1124,42 @@ rl.on("line", (line) => {
                   },
                 }
               : undefined,
+        });
+      } else if (toolName === "wiki_runtime_info") {
+        const runtimeInfo = {
+          source: "mcp_bundle_runtime",
+          bundle: {
+            bundleId: manifest.bundleId,
+            version: manifest.version ?? null,
+          },
+          lease: {
+            mode: leaseResult.mode,
+            iss: leaseResult.payload.iss,
+            sub: leaseResult.payload.sub,
+            iat: leaseResult.payload.iat,
+            exp: leaseResult.payload.exp,
+            jti: leaseResult.payload.jti,
+            leaseCounter: leaseResult.payload.leaseCounter,
+          },
+          seat: {
+            seatId: runtimeSeatId,
+          },
+          policy: {
+            policyId: policySnapshot?.policyId ?? null,
+            workspaceId: policySnapshot?.workspaceId ?? null,
+            present: policySnapshot !== null,
+          },
+          retrieval: {
+            engineRequested: ragConfig.engine,
+            failOpen: ragConfig.failOpen,
+            preindexReady: ragMetadata?.preindexReady ?? null,
+          },
+        };
+        appendMeterEvent("tool_success", { tool: toolName });
+        response = ok(id, {
+          content: [{ type: "text", text: JSON.stringify(runtimeInfo, null, 2) }],
+          isError: false,
+          metadata: runtimeInfo,
         });
       } else {
         appendMeterEvent("tool_unknown", { tool: toolName });
@@ -931,4 +1208,7 @@ rl.on("close", () => {
 });
 
 process.stderr.write("[skillpack] laws-consultant wiki MCP server ready (lease mode: " + leaseResult.mode + ")\n");
+process.stderr.write(
+  "[skillpack] wiki retrieval engine=" + ragConfig.engine + " failOpen=" + String(ragConfig.failOpen) + "\n"
+);
 }
