@@ -157,17 +157,22 @@ function createSqliteSearchRunner({
 
   return (query, limit) => {
     ensureReady();
-    const output = runCli([
-      "query",
-      "--db",
-      dbPath,
-      "--query",
-      query,
-      "--limit",
-      String(clampLimit(limit)),
-    ]);
-    const parsed = JSON.parse(output || "{}");
-    return normalizeSqliteRows(Array.isArray(parsed.hits) ? parsed.hits : [], limit);
+    try {
+      const output = runCli([
+        "query",
+        "--db",
+        dbPath,
+        "--query",
+        query,
+        "--limit",
+        String(clampLimit(limit)),
+      ]);
+      const parsed = JSON.parse(output || "{}");
+      return normalizeSqliteRows(Array.isArray(parsed.hits) ? parsed.hits : [], limit);
+    } catch (error) {
+      isReady = false;
+      throw error;
+    }
   };
 }
 

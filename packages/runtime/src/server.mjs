@@ -487,22 +487,10 @@ export function createSqliteWikiSearchRunner({
     (metadata?.preindexReady
       ? path.join(extractDir, "skill", "knowledge", "wiki-rag.db")
       : path.join(cwd, ".wiki-rag", "wiki-rag.db"));
-  const simulateFailure = (env.RAG_SIMULATE_FAILURE ?? "").toLowerCase();
   let isReady = false;
-
-  function maybeFail(stage) {
-    if (!simulateFailure) return;
-    if (simulateFailure === stage || (stage === "query" && simulateFailure === "query_parse")) {
-      throw new Error(`sqlite_simulated_failure:${simulateFailure}`);
-    }
-  }
 
   function ensureReady() {
     if (isReady) return;
-    maybeFail("db_missing");
-    maybeFail("db_corrupt");
-    maybeFail("io_error");
-    maybeFail("vector_extension_unavailable");
     fs.mkdirSync(path.dirname(resolvedDbPath), { recursive: true });
 
     const needsIndex = !fs.existsSync(resolvedDbPath) || metadata?.preindexReady !== true;
@@ -518,17 +506,20 @@ export function createSqliteWikiSearchRunner({
   }
 
   return function sqliteSearch(query, limit = DEFAULT_LIMIT) {
-    maybeFail("query_parse");
-    maybeFail("query");
     ensureReady();
-    const out = runWikiRagCli({
-      cliPath,
-      cwd,
-      env,
-      args: ["query", "--db", resolvedDbPath, "--query", query, "--limit", String(clampLimit(limit))],
-    });
-    const parsed = JSON.parse(out || "{}");
-    return normalizeSqliteRows(Array.isArray(parsed.hits) ? parsed.hits : [], limit);
+    try {
+      const out = runWikiRagCli({
+        cliPath,
+        cwd,
+        env,
+        args: ["query", "--db", resolvedDbPath, "--query", query, "--limit", String(clampLimit(limit))],
+      });
+      const parsed = JSON.parse(out || "{}");
+      return normalizeSqliteRows(Array.isArray(parsed.hits) ? parsed.hits : [], limit);
+    } catch (error) {
+      isReady = false;
+      throw error;
+    }
   };
 }
 
