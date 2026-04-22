@@ -1,11 +1,12 @@
 {
-  "name": "@skillpack/dashboard-worker",
+  "name": "@skillpack/dashboard",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "src/index.js",
   "dependencies": {
     "@clerk/backend": "^2.23.0",
+    "@skillpack/crypto": "workspace:*",
     "hono": "^4.8.2"
   },
   "devDependencies": {

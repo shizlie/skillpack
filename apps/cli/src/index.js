@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 
 import { canonicalJson, signDetached, verifyLeaseToken } from "@skillpack/crypto";
-import { createLicenseFetchHandler } from "@skillpack/license-server";
+import { createLicenseFetchHandler } from "@skillpack/core";
 import { createManualTimeAttestationContract } from "@skillpack/tsa";
 
 function parseArgMap(args) {

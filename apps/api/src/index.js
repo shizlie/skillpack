@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { createD1LeaseStore, createLicenseFetchHandler } from "@skillpack/license-server";
+import { createD1LeaseStore, createLicenseFetchHandler } from "@skillpack/core";
 
 const app = new Hono();
 

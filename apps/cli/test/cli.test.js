@@ -5,7 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { generateEd25519KeyPair } from "@skillpack/crypto";
-import { createLicenseFetchHandler } from "@skillpack/license-server";
+import { createLicenseFetchHandler } from "@skillpack/core";
 import { runSkillpackCli } from "../src/index.js";
 
 function makeIo() {

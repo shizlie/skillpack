@@ -5,11 +5,12 @@
   "description": "Commerce layer for signed, license-gated MCPB skill bundles.",
   "packageManager": "bun@1.3.11",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
     "test": "bun test",
-    "test:unit": "bun test obsidian-query.test.ts packages/*/test",
+    "test:unit": "bun test obsidian-query.test.ts packages/*/test apps/*/test",
     "test:wiki-rag": "bun test wiki-rag/test",
     "test:wiki-rag-fallback": "bun test packages/runtime/test/wiki-rag-fallback.test.mjs",
     "test:wiki-rag-parity": "bun test packages/runtime/test/wiki-rag-parity.test.mjs",
