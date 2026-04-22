@@ -71,7 +71,21 @@ if (!fs.existsSync(privateKeyFile) || !fs.existsSync(publicKeyFile)) {
 }
 
 // Issue a dev lease at build time so server.mjs can perform real lease verification
-const licenseBase = JSON.parse(fs.readFileSync(licenseFile, "utf8"));
+const licenseBase = fs.existsSync(licenseFile)
+  ? JSON.parse(fs.readFileSync(licenseFile, "utf8"))
+  : {
+      bundleId,
+      customerId: "demo-customer",
+      seatId: "default",
+      policy: {
+        ttlDays: 30,
+      },
+    };
+if (!fs.existsSync(licenseFile)) {
+  process.stderr.write(
+    `[WARN] ${path.relative(repoRoot, licenseFile)} missing; using generated default dev license payload\n`
+  );
+}
 const _privateKeyPem = fs.readFileSync(privateKeyFile, "utf8");
 const _publicKeyPem = fs.readFileSync(publicKeyFile, "utf8");
 const _licenseFetch = createLicenseFetchHandler({

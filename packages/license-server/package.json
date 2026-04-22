@@ -6,7 +6,8 @@
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./storage-sqlite": "./src/storage-sqlite.js"
+    "./storage-sqlite": "./src/storage-sqlite.js",
+    "./storage-d1": "./src/storage-d1.js"
   },
   "dependencies": {
     "@skillpack/crypto": "workspace:*",

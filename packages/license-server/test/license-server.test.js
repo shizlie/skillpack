@@ -85,14 +85,17 @@ test("verify rejects lease counter rewind", async () => {
 
 test("manual TSA attestation endpoint accepts contract payload", async () => {
   const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-tsa-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: mgmtKey,
   });
 
   const res = await fetch(
     new Request("http://local/v1/tsa/manual-attest", {
       method: "POST",
+      headers: { "x-api-key": mgmtKey },
       body: JSON.stringify({
         customerId: "cust-2",
         seatId: "seat-a",
@@ -134,6 +137,7 @@ test("lease issue exposes TSA warning state when token is near expiry", async ()
 
 test("manual TSA attestation latest endpoint returns most recent per customer+seat", async () => {
   const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-tsa-latest-key";
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skillpack-license-server-"));
   const dbPath = path.join(dir, "lease-store.sqlite");
   const leaseStore = createSqliteLeaseStore({ dbPath });
@@ -141,11 +145,14 @@ test("manual TSA attestation latest endpoint returns most recent per customer+se
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
     leaseStore,
+    managementApiKey: mgmtKey,
   });
+  const headers = { "x-api-key": mgmtKey };
 
   const first = await fetch(
     new Request("http://local/v1/tsa/manual-attest", {
       method: "POST",
+      headers,
       body: JSON.stringify({
         customerId: "cust-4",
         seatId: "seat-1",
@@ -161,6 +168,7 @@ test("manual TSA attestation latest endpoint returns most recent per customer+se
   const second = await fetch(
     new Request("http://local/v1/tsa/manual-attest", {
       method: "POST",
+      headers,
       body: JSON.stringify({
         customerId: "cust-4",
         seatId: "seat-1",
@@ -176,7 +184,7 @@ test("manual TSA attestation latest endpoint returns most recent per customer+se
   const latest = await fetch(
     new Request(
       "http://local/v1/tsa/manual-attestations/latest?customerId=cust-4&seatId=seat-1",
-      { method: "GET" }
+      { method: "GET", headers }
     )
   );
   expect(latest.status).toBe(200);

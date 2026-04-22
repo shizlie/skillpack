@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import { generateEd25519KeyPair } from "@skillpack/crypto";
 import { createLicenseFetchHandler } from "../src/index.js";
+import { createSqliteLeaseStore } from "../src/storage-sqlite.js";
 
 function makePolicy({ policyId, workspaceId = "ws-1", workspaceMode = "ENABLED" }) {
   return {
@@ -82,6 +83,13 @@ test("policy issue + sync + not_modified + meter upload + usage summary + disabl
       headers,
       body: JSON.stringify({
         workspaceId: "ws-1",
+        context: {
+          providerId: "prov-1",
+          customerId: "cust-1",
+          skillId: "skill-1",
+          bundleId: "bundle-1",
+          leaseJti: "lease-jti-1",
+        },
         events: [
           {
             prevHash: "h0",
@@ -122,8 +130,13 @@ test("policy issue + sync + not_modified + meter upload + usage summary + disabl
   const summaryBody = await summaryRes.json();
   expect(summaryBody.summary).toEqual([
     {
+      providerId: "prov-1",
+      customerId: "cust-1",
       workspaceId: "ws-1",
       seatId: "seat-1",
+      skillId: "skill-1",
+      bundleId: "bundle-1",
+      leaseJti: "lease-jti-1",
       tool: "wiki_search",
       unit: "tool_call",
       totalCalls: 5,
@@ -154,6 +167,93 @@ test("policy issue + sync + not_modified + meter upload + usage summary + disabl
   expect(syncAfterDisableBody.policy.workspacePolicy.mode).toBe("DISABLED");
 });
 
+test("meter upload re-upload is idempotent — same events not double-counted (SQLite)", async () => {
+  const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-key-dedup";
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: mgmtKey,
+    leaseStore: createSqliteLeaseStore(),
+  });
+
+  const body = JSON.stringify({
+    workspaceId: "ws-dedup",
+    context: { providerId: "prov-1", customerId: "cust-1", leaseJti: "jti-dedup" },
+    events: [
+      { prevHash: "h0", seq: 0, at: 1_800_000_000, kind: "tool_call", seatId: "seat-1", tool: "wiki_search", usage: { unit: "tool_call", delta: 1 } },
+    ],
+  });
+  const headers = { "content-type": "application/json", "x-api-key": mgmtKey };
+
+  const first = await fetch(new Request("http://local/v1/meter/upload", { method: "POST", headers, body }));
+  expect((await first.json()).accepted).toBe(true);
+
+  const second = await fetch(new Request("http://local/v1/meter/upload", { method: "POST", headers, body }));
+  expect((await second.json()).accepted).toBe(true);
+
+  const summary = await (await fetch(new Request("http://local/v1/usage/summary?workspaceId=ws-dedup", { headers }))).json();
+  expect(summary.summary).toHaveLength(1);
+  expect(summary.summary[0].totalCalls).toBe(1);
+});
+
+test("meter upload with invalid contract returns 400", async () => {
+  const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-key-invalid";
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: mgmtKey,
+  });
+
+  const res = await fetch(
+    new Request("http://local/v1/meter/upload", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": mgmtKey },
+      body: JSON.stringify({ events: [] }),
+    })
+  );
+  expect(res.status).toBe(400);
+  const resBody = await res.json();
+  expect(resBody.accepted).toBe(false);
+});
+
+test("usage summary multi-dimension filter returns only matching rows", async () => {
+  const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-key-mf";
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: mgmtKey,
+  });
+
+  const headers = { "content-type": "application/json", "x-api-key": mgmtKey };
+  const mkEvent = (seq, seatId, tool) => ({
+    prevHash: "h0",
+    seq,
+    at: 1_800_000_000 + seq,
+    kind: "tool_call",
+    seatId,
+    tool,
+    usage: { unit: "tool_call", delta: 1 },
+  });
+
+  await fetch(new Request("http://local/v1/meter/upload", {
+    method: "POST", headers,
+    body: JSON.stringify({ workspaceId: "ws-mf", context: { customerId: "cust-A", providerId: "prov-A", leaseJti: "jti-mf-a" }, events: [mkEvent(1, "seat-1", "wiki_search")] }),
+  }));
+  await fetch(new Request("http://local/v1/meter/upload", {
+    method: "POST", headers,
+    body: JSON.stringify({ workspaceId: "ws-mf", context: { customerId: "cust-B", providerId: "prov-B", leaseJti: "jti-mf-b" }, events: [mkEvent(2, "seat-2", "wiki_read_page")] }),
+  }));
+
+  const res = await fetch(new Request("http://local/v1/usage/summary?workspaceId=ws-mf&providerId=prov-A", { headers }));
+  const { summary } = await res.json();
+  expect(summary).toHaveLength(1);
+  expect(summary[0].providerId).toBe("prov-A");
+  expect(summary[0].tool).toBe("wiki_search");
+});
+
 test("management endpoints require api key when configured", async () => {
   const keys = generateEd25519KeyPair();
   const fetch = createLicenseFetchHandler({
@@ -177,4 +277,30 @@ test("management endpoints require api key when configured", async () => {
     })
   );
   expect(summaryWrongKey.status).toBe(401);
+});
+
+test("meter upload re-upload is idempotent — same events not double-counted (in-memory)", async () => {
+  const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-key-mem-dedup";
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: mgmtKey,
+  });
+
+  const body = JSON.stringify({
+    workspaceId: "ws-mem-dedup",
+    context: { providerId: "prov-1", customerId: "cust-1", leaseJti: "jti-mem-dedup" },
+    events: [
+      { prevHash: "h0", seq: 0, at: 1_800_000_000, kind: "tool_call", seatId: "seat-1", tool: "wiki_search", usage: { unit: "tool_call", delta: 1 } },
+    ],
+  });
+  const headers = { "content-type": "application/json", "x-api-key": mgmtKey };
+
+  await fetch(new Request("http://local/v1/meter/upload", { method: "POST", headers, body }));
+  await fetch(new Request("http://local/v1/meter/upload", { method: "POST", headers, body }));
+
+  const summary = await (await fetch(new Request("http://local/v1/usage/summary?workspaceId=ws-mem-dedup", { headers }))).json();
+  expect(summary.summary).toHaveLength(1);
+  expect(summary.summary[0].totalCalls).toBe(1);
 });

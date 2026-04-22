@@ -113,9 +113,11 @@ test("cli: tsa manual-attest validates required fields", async () => {
 
 test("cli: tsa manual-attest posts to server and latest-attestation reads record", async () => {
   const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-tsa-cli-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: mgmtKey,
   });
 
   const attestSink = makeIo();
@@ -125,6 +127,8 @@ test("cli: tsa manual-attest posts to server and latest-attestation reads record
       "manual-attest",
       "--server-url",
       "http://local",
+      "--api-key",
+      mgmtKey,
       "--customer-id",
       "cust-9",
       "--seat-id",
@@ -152,6 +156,8 @@ test("cli: tsa manual-attest posts to server and latest-attestation reads record
       "latest-attestation",
       "--server-url",
       "http://local",
+      "--api-key",
+      mgmtKey,
       "--customer-id",
       "cust-9",
       "--seat-id",
@@ -238,6 +244,84 @@ test("cli: policy sync returns latest policy", async () => {
   expect(parsed.policy.workspacePolicy.mode).toBe("DISABLED");
 });
 
+test("cli: provider/customer/workspace create", async () => {
+  const keys = generateEd25519KeyPair();
+  const managementApiKey = "test-management-key";
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey,
+  });
+
+  const providerSink = makeIo();
+  const providerCode = await runSkillpackCli(
+    [
+      "provider",
+      "create",
+      "--server-url",
+      "http://local",
+      "--api-key",
+      managementApiKey,
+      "--provider-id",
+      "prov-1",
+      "--name",
+      "Provider One",
+    ],
+    providerSink.io,
+    { fetchImpl: fetch }
+  );
+  expect(providerCode).toBe(0);
+  expect(JSON.parse(providerSink.read().out).provider.providerId).toBe("prov-1");
+
+  const customerSink = makeIo();
+  const customerCode = await runSkillpackCli(
+    [
+      "customer",
+      "create",
+      "--server-url",
+      "http://local",
+      "--api-key",
+      managementApiKey,
+      "--provider-id",
+      "prov-1",
+      "--customer-id",
+      "cust-1",
+      "--name",
+      "Customer One",
+    ],
+    customerSink.io,
+    { fetchImpl: fetch }
+  );
+  expect(customerCode).toBe(0);
+  expect(JSON.parse(customerSink.read().out).customer.customerId).toBe("cust-1");
+
+  const workspaceSink = makeIo();
+  const workspaceCode = await runSkillpackCli(
+    [
+      "workspace",
+      "create",
+      "--server-url",
+      "http://local",
+      "--api-key",
+      managementApiKey,
+      "--workspace-id",
+      "ws-1",
+      "--provider-id",
+      "prov-1",
+      "--customer-id",
+      "cust-1",
+      "--name",
+      "Workspace One",
+    ],
+    workspaceSink.io,
+    { fetchImpl: fetch }
+  );
+  expect(workspaceCode).toBe(0);
+  const workspaceParsed = JSON.parse(workspaceSink.read().out);
+  expect(workspaceParsed.workspace.workspaceId).toBe("ws-1");
+  expect(workspaceParsed.workspace.status).toBe("ACTIVE");
+});
+
 test("cli: meter upload ingests events from jsonl", async () => {
   const keys = generateEd25519KeyPair();
   const managementApiKey = "test-management-key";
@@ -312,6 +396,13 @@ test("cli: usage summary prints totals", async () => {
       headers: { "x-api-key": managementApiKey },
       body: JSON.stringify({
         workspaceId: "ws-1",
+        context: {
+          providerId: "prov-1",
+          customerId: "cust-1",
+          skillId: "skill-1",
+          bundleId: "bundle-1",
+          leaseJti: "lease-jti-1",
+        },
         events: [
           {
             prevHash: "h10",
@@ -355,13 +446,139 @@ test("cli: usage summary prints totals", async () => {
   const parsed = JSON.parse(sink.read().out);
   expect(parsed.summary).toEqual([
     {
+      providerId: "prov-1",
+      customerId: "cust-1",
       workspaceId: "ws-1",
       seatId: "seat-1",
+      skillId: "skill-1",
+      bundleId: "bundle-1",
+      leaseJti: "lease-jti-1",
       tool: "wiki_search",
       unit: "tool_call",
       totalCalls: 5,
     },
   ]);
+});
+
+test("cli: provider create fails without --provider-id", async () => {
+  const sink = makeIo();
+  const code = await runSkillpackCli(
+    ["provider", "create", "--server-url", "http://local"],
+    sink.io,
+    { fetchImpl: () => { throw new Error("should_not_reach_fetch"); } }
+  );
+  expect(code).toBe(1);
+  const parsed = JSON.parse(sink.read().err);
+  expect(parsed.error).toBe("missing_provider_id");
+});
+
+test("cli: customer create fails without --customer-id", async () => {
+  const sink = makeIo();
+  const code = await runSkillpackCli(
+    ["customer", "create", "--server-url", "http://local", "--provider-id", "prov-1"],
+    sink.io,
+    { fetchImpl: () => { throw new Error("should_not_reach_fetch"); } }
+  );
+  expect(code).toBe(1);
+  const parsed = JSON.parse(sink.read().err);
+  expect(parsed.error).toBe("missing_customer_id");
+});
+
+test("cli: workspace create fails without --workspace-id", async () => {
+  const sink = makeIo();
+  const code = await runSkillpackCli(
+    [
+      "workspace", "create",
+      "--server-url", "http://local",
+      "--provider-id", "prov-1",
+      "--customer-id", "cust-1",
+    ],
+    sink.io,
+    { fetchImpl: () => { throw new Error("should_not_reach_fetch"); } }
+  );
+  expect(code).toBe(1);
+  const parsed = JSON.parse(sink.read().err);
+  expect(parsed.error).toBe("missing_workspace_id");
+});
+
+test("cli: provider create returns 401 when api key missing", async () => {
+  const keys = generateEd25519KeyPair();
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: "required-key",
+  });
+
+  const sink = makeIo();
+  const code = await runSkillpackCli(
+    ["provider", "create", "--server-url", "http://local", "--provider-id", "prov-1"],
+    sink.io,
+    { fetchImpl: fetch }
+  );
+  expect(code).toBe(1);
+  const parsed = JSON.parse(sink.read().err);
+  expect(parsed.error).toBe("unauthorized");
+});
+
+test("cli: customer create returns 400 for unknown provider", async () => {
+  const keys = generateEd25519KeyPair();
+  const managementApiKey = "test-management-key";
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey,
+  });
+
+  const sink = makeIo();
+  const code = await runSkillpackCli(
+    [
+      "customer", "create",
+      "--server-url", "http://local",
+      "--api-key", managementApiKey,
+      "--provider-id", "nonexistent-provider",
+      "--customer-id", "cust-1",
+    ],
+    sink.io,
+    { fetchImpl: fetch }
+  );
+  expect(code).toBe(1);
+  const parsed = JSON.parse(sink.read().err);
+  expect(parsed.error).toBe("provider_not_found");
+});
+
+test("cli: workspace create returns 400 for unknown customer", async () => {
+  const keys = generateEd25519KeyPair();
+  const managementApiKey = "test-management-key";
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey,
+  });
+
+  await fetch(
+    new Request("http://local/v1/providers", {
+      method: "POST",
+      headers: { "x-api-key": managementApiKey },
+      body: JSON.stringify({ providerId: "prov-neg", name: "Neg Provider" }),
+    })
+  );
+
+  const sink = makeIo();
+  const code = await runSkillpackCli(
+    [
+      "workspace", "create",
+      "--server-url", "http://local",
+      "--api-key", managementApiKey,
+      "--workspace-id", "ws-neg",
+      "--provider-id", "prov-neg",
+      "--customer-id", "nonexistent-customer",
+    ],
+    sink.io,
+    { fetchImpl: fetch }
+  );
+  expect(code).toBe(1);
+  const parsed = JSON.parse(sink.read().err);
+  expect(parsed.error).toBe("customer_not_found");
 });
 
 test("cli: bundle build creates .mcpb artifact", async () => {

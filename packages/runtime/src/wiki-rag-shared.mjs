@@ -8,6 +8,10 @@ export function clampLimit(limit) {
   return Math.min(Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_LIMIT, MAX_LIMIT);
 }
 
+export function toPageId(fileName) {
+  return fileName.replace(/\.md$/i, "");
+}
+
 export function parseBool(value, fallback) {
   if (value === undefined || value === null || value === "") return fallback;
   const normalized = String(value).trim().toLowerCase();

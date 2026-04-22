@@ -159,10 +159,12 @@ describe("full journey e2e", () => {
     const store = createSqliteLeaseStore({ dbPath });
     cleanupFns.push(async () => store.close?.());
 
+    const mgmtKey = "test-e2e-journey-b-key";
     const fetch = createLicenseFetchHandler({
       signingPrivateKeyPem: keys.privateKeyPem,
       signingPublicKeyPem: keys.publicKeyPem,
       leaseStore: store,
+      managementApiKey: mgmtKey,
     });
 
     const issueIo = makeIo();
@@ -196,6 +198,8 @@ describe("full journey e2e", () => {
         "manual-attest",
         "--server-url",
         "http://local",
+        "--api-key",
+        mgmtKey,
         "--customer-id",
         "cust-e2e-b",
         "--seat-id",
@@ -221,6 +225,8 @@ describe("full journey e2e", () => {
         "latest-attestation",
         "--server-url",
         "http://local",
+        "--api-key",
+        mgmtKey,
         "--customer-id",
         "cust-e2e-b",
         "--seat-id",

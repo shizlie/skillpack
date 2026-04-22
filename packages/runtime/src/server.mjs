@@ -31,10 +31,11 @@ import {
   SNIPPET_SIZE,
   clampLimit,
   parseBool,
-  readWikiEngineConfig as readWikiEngineConfigShared,
+  toPageId,
+  readWikiEngineConfig,
   normalizeSqliteRows,
 } from "./wiki-rag-shared.mjs";
-export { readWikiEngineConfigShared as readWikiEngineConfig };
+export { readWikiEngineConfig } from "./wiki-rag-shared.mjs";
 
 // ── lease verification (inlined from @skillpack/runtime + @skillpack/crypto) ─
 
@@ -374,10 +375,6 @@ function normalizePageName(name) {
   const t = (typeof name === "string" ? name : "").trim();
   if (!t) throw new Error("wiki_invalid_page_name");
   return t.endsWith(".md") ? t : t + ".md";
-}
-
-function toPageId(fileName) {
-  return fileName.replace(/\.md$/i, "");
 }
 
 function countMatches(content, query) {
@@ -803,7 +800,7 @@ const resolvedCliPath = path.join(deployedWikiRagSrcDir, "cli.ts");
 fs.rmSync(extractDir, { recursive: true, force: true });
 
 const wiki = createWikiRepository(wikiDir);
-const ragConfig = readWikiEngineConfigShared(process.env);
+const ragConfig = readWikiEngineConfig(process.env);
 const sqliteSearch = createSqliteWikiSearchRunner({
   wikiDir,
   extractDir,
