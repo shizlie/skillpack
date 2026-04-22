@@ -29,7 +29,7 @@ const releaseBundleFile = path.join(releaseDir, `${bundleId}-${version}.mcpb`);
 const releasePublicKeyFile = path.join(releaseDir, `${bundleId}-${version}.public.pem`);
 const releaseSkillDir = path.join(releaseDir, "skill", bundleId);
 const releaseRuntimeDir = path.join(releaseDir, "runtime");
-const releaseRuntimeWikiRagSrcDir = path.join(releaseRuntimeDir, "wiki-rag-src");
+// wiki-rag-src is bundled inside the .mcpb (signed) — not copied separately to release dir
 const releaseVerifyScript = path.join(releaseRuntimeDir, "verify-bundle.mjs");
 const releaseInstallScript = path.join(releaseRuntimeDir, "install-skill.sh");
 const releaseReceiverScript = path.join(
@@ -121,6 +121,11 @@ const policySourceFile = path.join(distributionDir, "policy.dev.json");
 if (fs.existsSync(policySourceFile)) {
   fs.copyFileSync(policySourceFile, path.join(inputDir, "policy.json"));
 }
+// Bundle wiki-rag-src inside inputDir so it's covered by manifest.sha256 + Ed25519 signature.
+// The runtime extracts it from the bundle at startup — no unsigned copy in the release dir.
+const bundleWikiRagSrcDir = path.join(inputDir, "wiki-rag-src");
+copyDirRecursively(path.join(repoRoot, "wiki-rag", "src"), bundleWikiRagSrcDir);
+
 fs.mkdirSync(path.join(inputDir, "knowledge"), { recursive: true });
 const wikiArchive = path.join(inputDir, "knowledge", "wiki.tar.gz");
 const wikiTar = spawnSync(
@@ -223,21 +228,22 @@ const releaseServerUtilScript = path.join(releaseRuntimeDir, "server-util.mjs");
 fs.copyFileSync(serverUtilMjsSource, releaseServerUtilScript);
 fs.chmodSync(releaseServerUtilScript, 0o755);
 
-const wikiRagSourceDir = path.join(repoRoot, "wiki-rag", "src");
-copyDirRecursively(wikiRagSourceDir, releaseRuntimeWikiRagSrcDir);
+const wikiRagSharedSource = path.join(repoRoot, "packages", "runtime", "src", "wiki-rag-shared.mjs");
+const releaseWikiRagSharedScript = path.join(releaseRuntimeDir, "wiki-rag-shared.mjs");
+fs.copyFileSync(wikiRagSharedSource, releaseWikiRagSharedScript);
 
 const bundleSha = sha256Hex(releaseBundleFile);
 const pubKeySha = sha256Hex(releasePublicKeyFile);
 const serverMjsSha = sha256Hex(releaseServerScript);
 const serverUtilMjsSha = sha256Hex(releaseServerUtilScript);
-const runtimeWikiCliSha = sha256Hex(path.join(releaseRuntimeWikiRagSrcDir, "cli.ts"));
+const wikiRagSharedSha = sha256Hex(releaseWikiRagSharedScript);
 fs.writeFileSync(
   releaseChecksumsFile,
   `${bundleSha}  ${path.basename(releaseBundleFile)}\n` +
   `${pubKeySha}  ${path.basename(releasePublicKeyFile)}\n` +
   `${serverMjsSha}  runtime/server.mjs\n` +
   `${serverUtilMjsSha}  runtime/server-util.mjs\n` +
-  `${runtimeWikiCliSha}  runtime/wiki-rag-src/cli.ts\n`
+  `${wikiRagSharedSha}  runtime/wiki-rag-shared.mjs\n`
 );
 
 const verifyScript = `#!/usr/bin/env node

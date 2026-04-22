@@ -1,6 +1,8 @@
 import type { Database } from "bun:sqlite";
 
 export function ensureSchema(db: Database) {
+  db.run("PRAGMA journal_mode=WAL");
+
   db.run(`CREATE TABLE IF NOT EXISTS documents (
     doc_id TEXT PRIMARY KEY,
     path TEXT UNIQUE NOT NULL,

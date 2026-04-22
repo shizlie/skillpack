@@ -1,13 +1,18 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import {
+  SQLITE_ENGINE,
+  LEGACY_ENGINE,
+  DEFAULT_LIMIT,
+  MAX_LIMIT,
+  clampLimit,
+  readWikiEngineConfig,
+  normalizeSqliteRows,
+} from "../../runtime/src/wiki-rag-shared.mjs";
 
 const DEFAULT_PROTOCOL_VERSION = "2024-11-05";
 const DEFAULT_SERVER_INFO = { name: "skillpack-wiki-mcp", version: "0.1.0" };
-const DEFAULT_LIMIT = 5;
-const MAX_LIMIT = 20;
-const SQLITE_ENGINE = "sqlite";
-const LEGACY_ENGINE = "legacy";
 
 function normalizePageName(pageName) {
   if (typeof pageName !== "string" || pageName.trim().length === 0) {
@@ -28,27 +33,6 @@ function pageUri(pageId) {
 function parsePageUri(uri) {
   if (typeof uri !== "string" || !uri.startsWith("wiki://page/")) return null;
   return decodeURIComponent(uri.slice("wiki://page/".length));
-}
-
-function clampLimit(limit) {
-  if (!Number.isInteger(limit) || limit <= 0) return DEFAULT_LIMIT;
-  return Math.min(limit, MAX_LIMIT);
-}
-
-function parseBool(value, fallback) {
-  if (value === undefined || value === null || value === "") return fallback;
-  const normalized = String(value).trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  return fallback;
-}
-
-export function readWikiEngineConfig(env = process.env) {
-  const rawEngine = (env.RAG_ENGINE ?? LEGACY_ENGINE).toLowerCase();
-  return {
-    engine: rawEngine === SQLITE_ENGINE ? SQLITE_ENGINE : LEGACY_ENGINE,
-    failOpen: parseBool(env.RAG_FAIL_OPEN, true),
-  };
 }
 
 function countMatches(content, query) {
@@ -140,17 +124,6 @@ function jsonRpcError(id, code, message) {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
-function normalizeSqliteRows(rows, limit) {
-  return rows.slice(0, clampLimit(limit)).map((row, index) => {
-    const page = String(row.path ?? "").replace(/\.md$/i, "");
-    return {
-      page,
-      score: clampLimit(limit) - index,
-      snippet: String(row.text ?? "").replace(/\s+/g, " ").trim().slice(0, 220),
-    };
-  });
-}
-
 function createSqliteSearchRunner({
   wikiDir,
   dbPath = path.join(wikiDir, ".wiki-rag.db"),
@@ -166,6 +139,10 @@ function createSqliteSearchRunner({
       env,
       encoding: "utf8",
     });
+    if (result.error) {
+      const code = result.error.code ? ` (${result.error.code})` : "";
+      throw new Error(`wiki_rag_cli_spawn_failed${code}: ${result.error.message}`);
+    }
     if (result.status !== 0) {
       throw new Error((result.stderr ?? "").trim() || `wiki_rag_cli_failed:${args.join(" ")}`);
     }
@@ -180,17 +157,22 @@ function createSqliteSearchRunner({
 
   return (query, limit) => {
     ensureReady();
-    const output = runCli([
-      "query",
-      "--db",
-      dbPath,
-      "--query",
-      query,
-      "--limit",
-      String(clampLimit(limit)),
-    ]);
-    const parsed = JSON.parse(output || "{}");
-    return normalizeSqliteRows(Array.isArray(parsed.hits) ? parsed.hits : [], limit);
+    try {
+      const output = runCli([
+        "query",
+        "--db",
+        dbPath,
+        "--query",
+        query,
+        "--limit",
+        String(clampLimit(limit)),
+      ]);
+      const parsed = JSON.parse(output || "{}");
+      return normalizeSqliteRows(Array.isArray(parsed.hits) ? parsed.hits : [], limit);
+    } catch (error) {
+      isReady = false;
+      throw error;
+    }
   };
 }
 

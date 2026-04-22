@@ -53,6 +53,7 @@ The format is based on Keep a Changelog.
 
 - Fixed merge compatibility and schema/index test integration for `wiki-rag` after rebasing with `main`.
 - Fixed receiver runbook command/config snippets to be version-parameterized and corrected malformed MCP config example output.
+
 ## [0.3.0.0] - 2026-04-20
 
 ### Added

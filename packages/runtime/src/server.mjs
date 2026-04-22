@@ -24,17 +24,18 @@ import {
   ensureSafePathWithin,
 } from "./server-util.mjs";
 import {
-  DEFAULT_LIMIT,
-  MAX_LIMIT,
   SQLITE_ENGINE,
   LEGACY_ENGINE,
-  parseBool,
+  DEFAULT_LIMIT,
+  MAX_LIMIT,
+  SNIPPET_SIZE,
   clampLimit,
+  parseBool,
   toPageId,
-  normalizeSqliteRows,
   readWikiEngineConfig,
-} from "./wiki-rag-utils.mjs";
-export { readWikiEngineConfig } from "./wiki-rag-utils.mjs";
+  normalizeSqliteRows,
+} from "./wiki-rag-shared.mjs";
+export { readWikiEngineConfig } from "./wiki-rag-shared.mjs";
 
 // ── lease verification (inlined from @skillpack/runtime + @skillpack/crypto) ─
 
@@ -483,22 +484,10 @@ export function createSqliteWikiSearchRunner({
     (metadata?.preindexReady
       ? path.join(extractDir, "skill", "knowledge", "wiki-rag.db")
       : path.join(cwd, ".wiki-rag", "wiki-rag.db"));
-  const simulateFailure = (env.RAG_SIMULATE_FAILURE ?? "").toLowerCase();
   let isReady = false;
-
-  function maybeFail(stage) {
-    if (!simulateFailure) return;
-    if (simulateFailure === stage || (stage === "query" && simulateFailure === "query_parse")) {
-      throw new Error(`sqlite_simulated_failure:${simulateFailure}`);
-    }
-  }
 
   function ensureReady() {
     if (isReady) return;
-    maybeFail("db_missing");
-    maybeFail("db_corrupt");
-    maybeFail("io_error");
-    maybeFail("vector_extension_unavailable");
     fs.mkdirSync(path.dirname(resolvedDbPath), { recursive: true });
 
     const needsIndex = !fs.existsSync(resolvedDbPath) || metadata?.preindexReady !== true;
@@ -514,17 +503,20 @@ export function createSqliteWikiSearchRunner({
   }
 
   return function sqliteSearch(query, limit = DEFAULT_LIMIT) {
-    maybeFail("query_parse");
-    maybeFail("query");
     ensureReady();
-    const out = runWikiRagCli({
-      cliPath,
-      cwd,
-      env,
-      args: ["query", "--db", resolvedDbPath, "--query", query, "--limit", String(clampLimit(limit))],
-    });
-    const parsed = JSON.parse(out || "{}");
-    return normalizeSqliteRows(Array.isArray(parsed.hits) ? parsed.hits : [], limit);
+    try {
+      const out = runWikiRagCli({
+        cliPath,
+        cwd,
+        env,
+        args: ["query", "--db", resolvedDbPath, "--query", query, "--limit", String(clampLimit(limit))],
+      });
+      const parsed = JSON.parse(out || "{}");
+      return normalizeSqliteRows(Array.isArray(parsed.hits) ? parsed.hits : [], limit);
+    } catch (error) {
+      isReady = false;
+      throw error;
+    }
   };
 }
 
@@ -579,14 +571,6 @@ export function runWikiSearchWithFallbackDetailed({
     }
     const reason = error instanceof Error ? error.message : String(error);
     log(`[WARN] sqlite wiki search failed, falling back to legacy: ${reason}`);
-    if (engine !== SQLITE_ENGINE) {
-      return {
-        results: legacySearch(query, limit),
-        pathUsed: LEGACY_ENGINE,
-        fallbackUsed: false,
-        fallbackReason: null,
-      };
-    }
     return {
       results: legacySearch(query, limit),
       pathUsed: LEGACY_ENGINE,
@@ -800,17 +784,29 @@ if (!fs.existsSync(wikiDir)) {
   process.exit(1);
 }
 
+const ragMetadata = readWikiRagBundleMetadata(extractDir);
+
+// Extract wiki-rag-src from signed bundle to bundleDir before cleanup.
+// This is the only trusted path for the CLI — it was covered by manifest.sha256 + Ed25519.
+const bundledWikiRagSrcDir = path.join(extractDir, "skill", "wiki-rag-src");
+const deployedWikiRagSrcDir = path.join(bundleDir, "wiki-rag-src");
+if (fs.existsSync(bundledWikiRagSrcDir)) {
+  fs.rmSync(deployedWikiRagSrcDir, { recursive: true, force: true });
+  fs.cpSync(bundledWikiRagSrcDir, deployedWikiRagSrcDir, { recursive: true });
+}
+const resolvedCliPath = path.join(deployedWikiRagSrcDir, "cli.ts");
+
 // Clean up .mcpb extract dir — wiki is now in wikiExtractDir
 fs.rmSync(extractDir, { recursive: true, force: true });
 
 const wiki = createWikiRepository(wikiDir);
 const ragConfig = readWikiEngineConfig(process.env);
-const ragMetadata = readWikiRagBundleMetadata(extractDir);
 const sqliteSearch = createSqliteWikiSearchRunner({
   wikiDir,
   extractDir,
   env: process.env,
   metadata: ragMetadata,
+  cliPath: fs.existsSync(resolvedCliPath) ? resolvedCliPath : defaultWikiRagCliPath(),
 });
 
 // ── meter setup ───────────────────────────────────────────────────────────────
@@ -1109,8 +1105,6 @@ rl.on("line", (line) => {
             sub: leaseResult.payload.sub,
             iat: leaseResult.payload.iat,
             exp: leaseResult.payload.exp,
-            jti: leaseResult.payload.jti,
-            leaseCounter: leaseResult.payload.leaseCounter,
           },
           seat: {
             seatId: runtimeSeatId,
