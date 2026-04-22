@@ -120,28 +120,19 @@ export function searchLexical(db: Database, query: string): SearchHit[] {
     return [];
   }
 
+  // Always sanitize to strip FTS5 operators (NOT, AND, OR, NEAR) and column selectors
+  // before querying. This prevents corpus enumeration via FTS5 syntax injection.
+  const sanitizedQuery = sanitizeLexicalQuery(normalizedQuery);
+  if (!sanitizedQuery) {
+    return [];
+  }
+
   try {
-    return runLexicalSearch(db, normalizedQuery);
+    return runLexicalSearch(db, sanitizedQuery);
   } catch (error) {
     if (!isRecoverableMatchError(error)) {
       throw error;
     }
-
-    const sanitizedQuery = sanitizeLexicalQuery(normalizedQuery);
-    if (!sanitizedQuery || sanitizedQuery === normalizedQuery) {
-      return [];
-    }
-
-    try {
-      return runLexicalSearch(db, sanitizedQuery);
-    } catch (fallbackError) {
-      if (!isRecoverableMatchError(fallbackError)) {
-        throw fallbackError;
-      }
-
-      return [];
-    }
+    return [];
   }
-
-  return [];
 }
