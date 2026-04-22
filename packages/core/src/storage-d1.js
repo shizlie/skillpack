@@ -177,13 +177,17 @@ export function createD1LeaseStore({ db }) {
         source: row.source,
       };
     },
-    async listManualAttestations() {
+    async listManualAttestations({ customerId, seatId } = {}) {
       await ensureReady();
       const rows = await allRows(
         db,
         `SELECT customer_id, seat_id, operator_id, ticket_id, reason, attested_at_sec, recorded_at_sec, source
          FROM manual_attestations
-         ORDER BY recorded_at_sec DESC, id DESC`
+         WHERE (?1 IS NULL OR customer_id = ?1)
+           AND (?2 IS NULL OR seat_id = ?2)
+         ORDER BY recorded_at_sec DESC, id DESC`,
+        customerId ?? null,
+        seatId ?? null
       );
       return rows.map((row) => ({
         customerId: row.customer_id,
@@ -255,6 +259,19 @@ export function createD1LeaseStore({ db }) {
         name: saved.name ?? null,
       };
     },
+    async listProviders() {
+      await ensureReady();
+      const rows = await allRows(
+        db,
+        `SELECT provider_id, name
+         FROM providers
+         ORDER BY provider_id`
+      );
+      return rows.map((row) => ({
+        providerId: row.provider_id,
+        name: row.name ?? null,
+      }));
+    },
     async saveCustomer(providerId, customer) {
       await ensureReady();
       const provider = await firstRow(
@@ -295,6 +312,22 @@ export function createD1LeaseStore({ db }) {
         customerId: saved.customer_id,
         name: saved.name ?? null,
       };
+    },
+    async listCustomers(providerId) {
+      await ensureReady();
+      const rows = await allRows(
+        db,
+        `SELECT provider_id, customer_id, name
+         FROM customers
+         WHERE (?1 IS NULL OR provider_id = ?1)
+         ORDER BY provider_id, customer_id`,
+        providerId ?? null
+      );
+      return rows.map((row) => ({
+        providerId: row.provider_id,
+        customerId: row.customer_id,
+        name: row.name ?? null,
+      }));
     },
     async saveWorkspace(workspace) {
       await ensureReady();
@@ -368,6 +401,26 @@ export function createD1LeaseStore({ db }) {
         name: saved.name ?? null,
         status: saved.status,
       };
+    },
+    async listWorkspaces({ providerId, customerId } = {}) {
+      await ensureReady();
+      const rows = await allRows(
+        db,
+        `SELECT workspace_id, provider_id, customer_id, name, status
+         FROM workspaces
+         WHERE (?1 IS NULL OR provider_id = ?1)
+           AND (?2 IS NULL OR customer_id = ?2)
+         ORDER BY workspace_id`,
+        providerId ?? null,
+        customerId ?? null
+      );
+      return rows.map((row) => ({
+        workspaceId: row.workspace_id,
+        providerId: row.provider_id,
+        customerId: row.customer_id,
+        name: row.name ?? null,
+        status: row.status,
+      }));
     },
     async appendMeterEvents(events) {
       await ensureReady();

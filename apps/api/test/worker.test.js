@@ -110,6 +110,22 @@ test("worker: provider/customer/workspace + policy + meter + summary", async () 
   );
   expect(customerRes.status).toBe(200);
 
+  const customersListRes = await worker.fetch(
+    new Request("http://local/v1/providers/prov-1/customers", {
+      method: "GET",
+      headers: { "x-api-key": "mgmt-key" },
+    }),
+    env
+  );
+  expect(customersListRes.status).toBe(200);
+  expect((await customersListRes.json()).customers).toEqual([
+    {
+      providerId: "prov-1",
+      customerId: "cust-1",
+      name: "Customer One",
+    },
+  ]);
+
   const workspaceRes = await worker.fetch(
     new Request("http://local/v1/workspaces", {
       method: "POST",
@@ -124,6 +140,39 @@ test("worker: provider/customer/workspace + policy + meter + summary", async () 
     env
   );
   expect(workspaceRes.status).toBe(200);
+
+  const providersListRes = await worker.fetch(
+    new Request("http://local/v1/providers", {
+      method: "GET",
+      headers: { "x-api-key": "mgmt-key" },
+    }),
+    env
+  );
+  expect(providersListRes.status).toBe(200);
+  expect((await providersListRes.json()).providers).toEqual([
+    {
+      providerId: "prov-1",
+      name: "Provider One",
+    },
+  ]);
+
+  const workspacesListRes = await worker.fetch(
+    new Request("http://local/v1/workspaces?providerId=prov-1", {
+      method: "GET",
+      headers: { "x-api-key": "mgmt-key" },
+    }),
+    env
+  );
+  expect(workspacesListRes.status).toBe(200);
+  expect((await workspacesListRes.json()).workspaces).toEqual([
+    {
+      workspaceId: "ws-1",
+      providerId: "prov-1",
+      customerId: "cust-1",
+      name: "Workspace One",
+      status: "ACTIVE",
+    },
+  ]);
 
   const policyIssue = await worker.fetch(
     new Request("http://local/v1/policies/issue", {
@@ -189,6 +238,33 @@ test("worker: provider/customer/workspace + policy + meter + summary", async () 
     },
   ]);
 
+  const attestationRes = await worker.fetch(
+    new Request("http://local/v1/tsa/manual-attest", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        customerId: "cust-1",
+        seatId: "seat-1",
+        operatorId: "ops-1",
+        ticketId: "inc-1",
+        reason: "Manual attestation submitted during TSA outage workflow",
+        attestedAtSec: 1_800_000_200,
+      }),
+    }),
+    env
+  );
+  expect(attestationRes.status).toBe(200);
+
+  const attestationListRes = await worker.fetch(
+    new Request("http://local/v1/tsa/manual-attestations?customerId=cust-1", {
+      method: "GET",
+      headers: { "x-api-key": "mgmt-key" },
+    }),
+    env
+  );
+  expect(attestationListRes.status).toBe(200);
+  expect((await attestationListRes.json()).records).toHaveLength(1);
+
   env.DB.close();
 });
 
@@ -208,7 +284,7 @@ test("worker: accepts signing keys from *_BASE64 env vars", async () => {
   const res = await worker.fetch(
     new Request("http://local/v1/leases/issue", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-api-key": "mgmt-key" },
       body: JSON.stringify({
         customerId: "cust-1",
         seatId: "seat-1",
@@ -221,5 +297,50 @@ test("worker: accepts signing keys from *_BASE64 env vars", async () => {
   const body = await res.json();
   expect(typeof body.leaseToken).toBe("string");
 
+  env.DB.close();
+});
+
+test("worker: api responses include cors headers and root stays backend-only", async () => {
+  const keys = generateEd25519KeyPair();
+  const env = {
+    DB: createTestD1Database(),
+    SKILLPACK_MANAGEMENT_API_KEY: "mgmt-key",
+    SKILLPACK_SIGNING_PRIVATE_KEY_PEM: keys.privateKeyPem,
+    SKILLPACK_SIGNING_PUBLIC_KEY_PEM: keys.publicKeyPem,
+    SKILLPACK_DASHBOARD_ORIGIN: "https://dashboard.skillpack.example",
+  };
+
+  const preflightRes = await worker.fetch(
+    new Request("http://local/v1/providers", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://dashboard.skillpack.example",
+        "access-control-request-method": "GET",
+      },
+    }),
+    env
+  );
+  expect(preflightRes.status).toBe(204);
+  expect(preflightRes.headers.get("access-control-allow-origin")).toBe(
+    "https://dashboard.skillpack.example"
+  );
+
+  const providersRes = await worker.fetch(
+    new Request("http://local/v1/providers", {
+      method: "GET",
+      headers: {
+        origin: "https://dashboard.skillpack.example",
+        "x-api-key": "mgmt-key",
+      },
+    }),
+    env
+  );
+  expect(providersRes.status).toBe(200);
+  expect(providersRes.headers.get("access-control-allow-origin")).toBe(
+    "https://dashboard.skillpack.example"
+  );
+
+  const rootRes = await worker.fetch(new Request("http://local/"), env);
+  expect(rootRes.status).toBe(404);
   env.DB.close();
 });

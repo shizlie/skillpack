@@ -9,7 +9,7 @@ import {
   clampLimit,
   readWikiEngineConfig,
   normalizeSqliteRows,
-} from "../../runtime/src/wiki-rag-shared.mjs";
+} from "../../../packages/runtime/src/wiki-rag-shared.mjs";
 
 const DEFAULT_PROTOCOL_VERSION = "2024-11-05";
 const DEFAULT_SERVER_INFO = { name: "skillpack-wiki-mcp", version: "0.1.0" };

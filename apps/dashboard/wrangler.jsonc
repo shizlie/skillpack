@@ -1,0 +1,16 @@
+{
+  "name": "skillpack-dashboard",
+  "main": "src/index.js",
+  "compatibility_date": "2026-04-22",
+
+  // Configure these via wrangler secrets / vars:
+  // - SKILLPACK_API_BASE_URL: public URL of the backend API worker
+  // - SKILLPACK_API_MANAGEMENT_KEY: backend worker management key for server-side proxying
+  // - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY or CLERK_PUBLISHABLE_KEY
+  // - CLERK_SECRET_KEY
+  // Optional:
+  // - SKILLPACK_DASHBOARD_ORIGIN
+  // - SKILLPACK_CLERK_SIGN_IN_URL
+  // - SKILLPACK_CLERK_SIGN_UP_URL
+  "vars": {}
+}

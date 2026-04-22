@@ -1,5 +1,5 @@
 {
-  "name": "@skillpack/license-server",
+  "name": "@skillpack/core",
   "version": "0.1.0",
   "private": true,
   "type": "module",

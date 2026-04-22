@@ -13,7 +13,26 @@ That doc is the source of truth for product scope, architecture, threat model, s
 
 ## Status
 
-Pre-product. Pre-revenue. Design APPROVED. Week-1 foundations and CLI/runtime integration are implemented (`packages/crypto`, `packages/protocol`, `packages/license-server`, `packages/tsa`, `packages/cli`, `packages/runtime`). Current task: harden production storage/operations paths and ship release automation for distributable artifacts.
+Pre-product. Pre-revenue. Design APPROVED. Week-1 foundations and CLI/runtime integration are implemented. Monorepo restructured into `packages/` (pure libs) and `apps/` (deployables). Dashboard worker with Clerk auth shipped. Current task: harden production storage/operations paths and ship release automation for distributable artifacts.
+
+## Package layout
+
+```
+packages/          pure shared libraries
+  core/            @skillpack/core — business logic, storage (license-server renamed)
+  crypto/          @skillpack/crypto — Ed25519 signing
+  protocol/        @skillpack/protocol — bundle format + schema
+  tsa/             @skillpack/tsa — timestamp authority client
+  runtime/         @skillpack/runtime — embedded skill runtime (.mcpb)
+
+apps/              deployable units
+  api/             @skillpack/api — CF Worker REST API (was license-server-worker)
+  dashboard/       @skillpack/dashboard — CF Worker BFF + Clerk auth UI
+  cli/             @skillpack/cli — vendor-side CLI
+  wiki-mcp/        @skillpack/wiki-mcp — demo wiki MCP server
+```
+
+When adding code: pure business logic → `packages/core`. CF Worker glue → `apps/api`. New deployable → `apps/`.
 
 ## Architecture (v1)
 

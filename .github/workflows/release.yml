@@ -64,7 +64,7 @@ jobs:
           mkdir -p "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages"
 
           # Standalone Linux binaries for operators (no repo clone required)
-          bun build --compile --target=bun-linux-x64 packages/cli/src/cli.js \
+          bun build --compile --target=bun-linux-x64 apps/cli/src/cli.js \
             --outfile "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-linux-x64"
           bun build --compile --target=bun-linux-x64 packages/runtime/src/server.mjs \
             --outfile "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-linux-x64"
@@ -72,11 +72,13 @@ jobs:
           chmod +x "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-linux-x64"
 
           # Source bundle for users who prefer auditable/rebuildable workspace installs
+          mkdir -p "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages"
+          mkdir -p "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/apps"
           cp package.json "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/package.json"
           cp bun.lock "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/bun.lock"
-          cp -R packages/cli "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages/cli"
+          cp -R apps/cli "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/apps/cli"
+          cp -R packages/core "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages/core"
           cp -R packages/crypto "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages/crypto"
-          cp -R packages/license-server "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages/license-server"
           cp -R packages/tsa "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages/tsa"
           cp -R packages/protocol "dist/releases/v${VERSION}/src/skillpack-cli-${VERSION}/packages/protocol"
           tar -czf "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-source.tar.gz" \

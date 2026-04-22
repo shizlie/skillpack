@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [0.5.0.0] - 2026-04-22
+
+### Added
+
+- Dashboard Cloudflare Worker (`apps/dashboard`) with Clerk authentication and BFF proxy. Operators can now authenticate via Clerk and manage licenses through a browser UI backed by the API worker.
+- REST list/read endpoints for the commercial hierarchy: `GET /v1/providers`, `GET /v1/customers`, `GET /v1/workspaces`, and `GET /v1/tsa/manual-attestations` with optional filter parameters.
+- Parameterized SQL filters for `listManualAttestations` in both SQLite and D1 storage — WHERE clauses pushed to DB instead of in-memory filtering.
+- Storage filter unit tests for attestation queries (SQLite + D1): 14 new tests covering no-filter, single-field, combined AND, empty result, and NULL-filter cases.
+
+### Changed
+
+- Monorepo restructured into `packages/` (pure shared libraries) and `apps/` (deployable units). `packages/license-server` → `packages/core`, `packages/license-server-worker` → `apps/api`, `packages/cli` → `apps/cli`, `packages/wiki-mcp` → `apps/wiki-mcp`.
+- CORS origin handling in the API worker now correctly returns `*` when `SKILLPACK_DASHBOARD_ORIGIN` is not configured (previously reflected the incoming `Origin` header, which could cause cache poisoning).
+
+### Fixed
+
+- `POST /v1/leases/issue` is now management-key-gated on hosted servers. Previously any caller could issue signed lease tokens without authentication.
+- Dashboard proxy path stripping now uses `slice` and rejects paths containing `..`, preventing path traversal to unintended upstream routes.
+- E2E and release workflow paths updated to match the new monorepo layout.
+
 ## [Unreleased]
 
 ### Added

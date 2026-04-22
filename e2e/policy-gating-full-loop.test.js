@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 
 import { createLeaseToken, generateEd25519KeyPair } from "../packages/crypto/src/index.js";
-import { runSkillpackCli } from "../packages/cli/src/index.js";
-import { createLicenseFetchHandler } from "../packages/license-server/src/index.js";
+import { runSkillpackCli } from "../apps/cli/src/index.js";
+import { createLicenseFetchHandler } from "../packages/core/src/index.js";
 
 function makeIo() {
   let out = "";

@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@skillpack/crypto": "workspace:*",
-    "@skillpack/license-server": "workspace:*",
+    "@skillpack/core": "workspace:*",
     "@skillpack/tsa": "workspace:*"
   },
   "scripts": {

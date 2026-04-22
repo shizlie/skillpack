@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 
 import { canonicalJson, signDetached, verifyLeaseToken } from "@skillpack/crypto";
-import { createLicenseFetchHandler } from "@skillpack/license-server";
+import { createLicenseFetchHandler } from "@skillpack/core";
 import { createManualTimeAttestationContract } from "@skillpack/tsa";
 
 function parseArgMap(args) {
@@ -150,9 +150,12 @@ async function issueLease(commandArgs) {
   const flags = parseArgMap(commandArgs);
   const privateKeyPem = readKey(flags["private-key-file"], "private_key_file");
   const publicKeyPem = readKey(flags["public-key-file"], "public_key_file");
+  // Internal key for local signing — the private key is the real credential here.
+  const localKey = "cli-local-signing";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: privateKeyPem,
     signingPublicKeyPem: publicKeyPem,
+    managementApiKey: localKey,
   });
 
   const body = {
@@ -167,6 +170,7 @@ async function issueLease(commandArgs) {
   const response = await fetch(
     new Request("http://local/v1/leases/issue", {
       method: "POST",
+      headers: { "x-api-key": localKey },
       body: JSON.stringify(body),
     })
   );

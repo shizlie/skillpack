@@ -36,8 +36,12 @@ export function createInMemoryLeaseStore() {
       }
       return null;
     },
-    listManualAttestations() {
-      return [...manualAttestations];
+    listManualAttestations({ customerId, seatId } = {}) {
+      return manualAttestations.filter((r) => {
+        if (customerId && r.customerId !== customerId) return false;
+        if (seatId && (r.seatId ?? "default") !== seatId) return false;
+        return true;
+      });
     },
     savePolicySnapshot(workspaceId, snapshot) {
       policies.set(workspaceId, snapshot);
@@ -55,6 +59,11 @@ export function createInMemoryLeaseStore() {
       providers.set(saved.providerId, saved);
       return saved;
     },
+    listProviders() {
+      return Array.from(providers.values()).sort((a, b) =>
+        a.providerId.localeCompare(b.providerId)
+      );
+    },
     saveCustomer(providerId, customer) {
       if (!providers.has(providerId)) {
         throw new Error("provider_not_found");
@@ -68,6 +77,15 @@ export function createInMemoryLeaseStore() {
       };
       customers.set(mapKey, saved);
       return saved;
+    },
+    listCustomers(providerId) {
+      return Array.from(customers.values())
+        .filter((customer) => !providerId || customer.providerId === providerId)
+        .sort((a, b) =>
+          `${a.providerId}::${a.customerId}`.localeCompare(
+            `${b.providerId}::${b.customerId}`
+          )
+        );
     },
     saveWorkspace(workspace) {
       if (!providers.has(workspace.providerId)) {
@@ -93,6 +111,15 @@ export function createInMemoryLeaseStore() {
       };
       workspaces.set(saved.workspaceId, saved);
       return saved;
+    },
+    listWorkspaces({ providerId, customerId } = {}) {
+      return Array.from(workspaces.values())
+        .filter((workspace) => {
+          if (providerId && workspace.providerId !== providerId) return false;
+          if (customerId && workspace.customerId !== customerId) return false;
+          return true;
+        })
+        .sort((a, b) => a.workspaceId.localeCompare(b.workspaceId));
     },
     appendMeterEvents(events) {
       const seen = new Set(meterEvents.map((e) => e.eventId));

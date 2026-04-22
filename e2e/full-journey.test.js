@@ -9,9 +9,9 @@ import {
   generateEd25519KeyPair,
   verifyMeterChain,
 } from "../packages/crypto/src/index.js";
-import { runSkillpackCli } from "../packages/cli/src/index.js";
-import { createLicenseFetchHandler } from "../packages/license-server/src/index.js";
-import { createSqliteLeaseStore } from "../packages/license-server/src/storage-sqlite.js";
+import { runSkillpackCli } from "../apps/cli/src/index.js";
+import { createLicenseFetchHandler } from "../packages/core/src/index.js";
+import { createSqliteLeaseStore } from "../packages/core/src/storage-sqlite.js";
 import {
   createRuntimeMeter,
   executeWithRuntimeLease,
@@ -41,7 +41,7 @@ function writeKeys() {
 }
 
 function createJsonRpcLineClient({ wikiDir }) {
-  const scriptPath = path.resolve("packages/wiki-mcp/src/cli.js");
+  const scriptPath = path.resolve("apps/wiki-mcp/src/cli.js");
   const proc = spawn("bun", [scriptPath, `--wiki-dir=${wikiDir}`], {
     stdio: ["pipe", "pipe", "pipe"],
   });
