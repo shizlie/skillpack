@@ -4,8 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { ensureSchema } from "../src/schema";
 import { indexMarkdownDir, searchLexical } from "../src/indexer";
+import { ensureSchema, listTables } from "../src/schema";
 
 describe("indexer", () => {
   test("indexes markdown files into documents/chunks/fts", async () => {
@@ -80,5 +80,26 @@ describe("indexer", () => {
 
     expect(searchLexical(db, "foo-bar").map((hit) => hit.path)).toEqual(["policy.md"]);
     expect(searchLexical(db, "policy:").map((hit) => hit.path)).toEqual(["policy.md"]);
+  });
+});
+
+describe("schema", () => {
+  test("ensureSchema creates required tables", () => {
+    const db = new Database(":memory:");
+    ensureSchema(db);
+
+    const tables = listTables(db);
+    expect(tables).toHaveLength(3);
+    expect(tables).toEqual(["chunks", "chunks_fts", "documents"]);
+  });
+
+  test("listTables ignores extra non-canonical tables", () => {
+    const db = new Database(":memory:");
+    ensureSchema(db);
+    db.run("CREATE TABLE tmp_debug (id INTEGER PRIMARY KEY)");
+
+    const tables = listTables(db);
+    expect(tables).toHaveLength(3);
+    expect(tables).toEqual(["chunks", "chunks_fts", "documents"]);
   });
 });

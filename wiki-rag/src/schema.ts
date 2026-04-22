@@ -20,7 +20,6 @@ export function ensureSchema(db: Database) {
   )`);
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id)`);
-
   db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     chunk_id UNINDEXED,
     text,
