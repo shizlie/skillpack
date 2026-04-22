@@ -47,6 +47,90 @@ function createTestD1Database() {
   };
 }
 
+async function seedD1Attestations(store) {
+  await store.addManualAttestation({
+    customerId: "cust-a",
+    seatId: "seat-1",
+    operatorId: "op-1",
+    ticketId: "INC-1",
+    reason: "reason-a1",
+    attestedAtSec: 1_000,
+    recordedAtSec: 1_001,
+    source: "manual",
+  });
+  await store.addManualAttestation({
+    customerId: "cust-a",
+    seatId: "seat-2",
+    operatorId: "op-1",
+    ticketId: "INC-2",
+    reason: "reason-a2",
+    attestedAtSec: 2_000,
+    recordedAtSec: 2_001,
+    source: "manual",
+  });
+  await store.addManualAttestation({
+    customerId: "cust-b",
+    seatId: "seat-1",
+    operatorId: "op-2",
+    ticketId: "INC-3",
+    reason: "reason-b1",
+    attestedAtSec: 3_000,
+    recordedAtSec: 3_001,
+    source: "manual",
+  });
+}
+
+test("d1 listManualAttestations: returns all when no filters", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+  await seedD1Attestations(store);
+  const all = await store.listManualAttestations();
+  expect(all.length).toBe(3);
+});
+
+test("d1 listManualAttestations: filters by customerId", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+  await seedD1Attestations(store);
+  const rows = await store.listManualAttestations({ customerId: "cust-a" });
+  expect(rows.length).toBe(2);
+  expect(rows.every((r) => r.customerId === "cust-a")).toBe(true);
+});
+
+test("d1 listManualAttestations: filters by seatId", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+  await seedD1Attestations(store);
+  const rows = await store.listManualAttestations({ seatId: "seat-1" });
+  expect(rows.length).toBe(2);
+  expect(rows.every((r) => r.seatId === "seat-1")).toBe(true);
+});
+
+test("d1 listManualAttestations: filters by customerId + seatId (AND)", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+  await seedD1Attestations(store);
+  const rows = await store.listManualAttestations({ customerId: "cust-a", seatId: "seat-1" });
+  expect(rows.length).toBe(1);
+  expect(rows[0].ticketId).toBe("INC-1");
+});
+
+test("d1 listManualAttestations: returns empty for no-match", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+  await seedD1Attestations(store);
+  const rows = await store.listManualAttestations({ customerId: "cust-z" });
+  expect(rows.length).toBe(0);
+});
+
+test("d1 listManualAttestations: undefined filter treated as no-filter", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+  await seedD1Attestations(store);
+  const rows = await store.listManualAttestations({ customerId: undefined, seatId: undefined });
+  expect(rows.length).toBe(3);
+});
+
 test("d1 store: commercial hierarchy + usage summary", async () => {
   const db = createTestD1Database();
   const store = createD1LeaseStore({ db });
