@@ -629,9 +629,9 @@ Current status:
 
 ---
 
-## 18) Package Structure Refactor Plan
+## 18) Package Structure
 
-**Status: planned, not executed.**
+**Status: executed 2026-04-22. 201/201 tests pass.**
 
 ### Problem
 
@@ -706,7 +706,7 @@ works for single-operator internal tooling.
 
 Post-LOI migration path (when dashboard becomes a product surface):
 
-1. Add Vite build (`packages/dashboard-worker/vite.config.ts`) → output to `dist/`
+1. Add Vite build (`apps/dashboard/vite.config.ts`) → output to `dist/`
 2. Cloudflare Workers + Static Assets pattern — same worker, assets from `dist/`
 3. Replace vanilla JS with React or Preact + `@clerk/react`
 4. Replace `loadScript()` Clerk bootstrap with `<ClerkProvider>` + `<SignIn>`
@@ -721,4 +721,13 @@ the BFF proxy logic needs to stay in the same deploy unit.
 v1: any Clerk-authenticated user = full management access. Single-operator
 model, intentional. Post-LOI: add Clerk organizations/roles, scope proxy
 by role claim in `proxyApiRequest`.
+
+### Open items
+
+- [x] `license-server` → `packages/core`, `license-server-worker` → `apps/api` (done 2026-04-22)
+- [x] `listManualAttestations` — filters pushed to SQL (done 2026-04-22)
+- [ ] Self-hosted Docker image packaging (`apps/api` as Node/Bun HTTP server)
+- [ ] Dashboard Vite build pipeline (post-LOI)
+- [ ] RBAC in dashboard proxy (post-LOI)
+- [ ] Semi-detached dashboard crypto: wire `@skillpack/crypto` verify/decode into dashboard UI (dep added, UI wiring deferred)
 
