@@ -626,3 +626,99 @@ Current status:
 ## 17) Identity, in One Sentence
 
 `skillpack` is the control, ledger, and commercial operations layer that makes vertical AI skills sellable, enforceable, and billable across regulated offline deployments.
+
+---
+
+## 18) Package Structure Refactor Plan
+
+**Status: planned, not executed.**
+
+### Problem
+
+Current naming conflates library vs. deployable:
+
+| Package | Problem |
+|---------|---------|
+| `license-server` | Named like a server process. It is a pure JS library. |
+| `license-server-worker` | Name implies tight coupling to `license-server`. It is the API layer. |
+
+### Target layout
+
+```
+packages/
+  # Pure libraries — no runtime/deploy concern
+  core/              ← rename from license-server
+  crypto/            (unchanged)
+  protocol/          (unchanged)
+  tsa/               (unchanged)
+
+  # Cloudflare Worker deployables
+  api-worker/        ← rename from license-server-worker
+  dashboard-worker/  (unchanged)
+
+  # Client + edge runtimes
+  cli/               (unchanged)
+  runtime/           (unchanged)
+
+  # Demo
+  wiki-mcp/          (unchanged)
+```
+
+### What changes
+
+1. `packages/license-server/` → `packages/core/`
+   - `package.json` name: `@skillpack/license-server` → `@skillpack/core`
+   - Update import in `api-worker`: `from "@skillpack/license-server"` → `from "@skillpack/core"`
+
+2. `packages/license-server-worker/` → `packages/api-worker/`
+   - `package.json` name: `@skillpack/license-server-worker` → `@skillpack/api-worker`
+   - `wrangler.jsonc` worker name: `skillpack-api-worker` → `skillpack-api`
+   - Root `package.json` workspace entry updated
+
+3. `bun install` regenerates `bun.lock` (no manual edits needed)
+
+4. No behavior changes. All tests pass unchanged.
+
+### Multi-worker architecture (current)
+
+```
+browser
+  └── dashboard-worker  (Cloudflare Worker)
+        ├── GET /               → serves dashboard HTML/JS/CSS
+        ├── GET /app-config     → returns Clerk publishable key (unauthenticated)
+        ├── GET /assets/*       → static JS + CSS
+        └── /api/*  (Clerk-gated) → proxies to api-worker with mgmt key injected
+
+api-worker  (Cloudflare Worker, or self-hosted Docker + Bun HTTP)
+  └── core library
+        ├── D1 storage (hosted) or SQLite (self-hosted / air-gapped)
+        └── all management routes gated by x-api-key header
+```
+
+No Cloudflare Workers Service Bindings in v1 — HTTP proxy is simpler and
+works identically in the self-hosted Docker path. Service Bindings (zero-network
+hop) are a v2 latency optimization if needed.
+
+### Frontend evolution
+
+Current: vanilla JS embedded as string in `dashboard-ui.js` — zero build step,
+works for single-operator internal tooling.
+
+Post-LOI migration path (when dashboard becomes a product surface):
+
+1. Add Vite build (`packages/dashboard-worker/vite.config.ts`) → output to `dist/`
+2. Cloudflare Workers + Static Assets pattern — same worker, assets from `dist/`
+3. Replace vanilla JS with React or Preact + `@clerk/react`
+4. Replace `loadScript()` Clerk bootstrap with `<ClerkProvider>` + `<SignIn>`
+5. Add TanStack Query for data fetching (replaces manual `proxyFetch` wiring)
+
+Architecture decision to make at that point: Cloudflare Pages vs. Worker +
+Static Assets. Pages is simpler for pure SPA; Worker + Assets is better if
+the BFF proxy logic needs to stay in the same deploy unit.
+
+### Access control
+
+v1: any Clerk-authenticated user = full management access. Single-operator
+model, intentional. Post-LOI: add Clerk organizations/roles, scope proxy
+by role claim in `proxyApiRequest`.
+
