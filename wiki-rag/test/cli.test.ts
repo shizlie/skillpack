@@ -67,6 +67,13 @@ function seedStatsDb() {
   return dbPath;
 }
 
+function createWikiRoot() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-rag-cli-wiki-"));
+  fs.writeFileSync(path.join(dir, "index.md"), "# Index\n\nAlpha incident response");
+  fs.writeFileSync(path.join(dir, "policy.md"), "# Policy\n\nCopyright licensing policy");
+  return dir;
+}
+
 describe("wiki-rag cli", () => {
   test("doctor reports lexical readiness", () => {
     const result = runCli(["doctor"]);
@@ -113,5 +120,33 @@ describe("wiki-rag cli", () => {
     expect(result.exitCode).toBe(1);
     expect(decoder.decode(result.stdout)).toBe("");
     expect(decoder.decode(result.stderr)).toContain("unknown command");
+  });
+
+  test("index builds sqlite data from a markdown wiki root", () => {
+    const wikiRoot = createWikiRoot();
+    const dbPath = path.join(os.tmpdir(), `wiki-rag-index-${Date.now()}.db`);
+    const result = runCli(["index", "--db", dbPath, "--root", wikiRoot]);
+
+    expect(result.exitCode).toBe(0);
+    expect(decoder.decode(result.stderr)).toBe("");
+    const payload = JSON.parse(decoder.decode(result.stdout));
+    expect(payload.docs).toBe(2);
+    expect(payload.chunks).toBeGreaterThanOrEqual(2);
+  });
+
+  test("query returns hits json", () => {
+    const wikiRoot = createWikiRoot();
+    const dbPath = path.join(os.tmpdir(), `wiki-rag-query-${Date.now()}.db`);
+    const indexResult = runCli(["index", "--db", dbPath, "--root", wikiRoot]);
+    expect(indexResult.exitCode).toBe(0);
+
+    const queryResult = runCli(["query", "--db", dbPath, "--query", "licensing", "--limit", "3"]);
+    expect(queryResult.exitCode).toBe(0);
+    expect(decoder.decode(queryResult.stderr)).toBe("");
+    const payload = JSON.parse(decoder.decode(queryResult.stdout));
+    expect(Array.isArray(payload.hits)).toBe(true);
+    expect(payload.hits.length).toBeGreaterThan(0);
+    expect(payload.hits[0]).toHaveProperty("path");
+    expect(payload.hits[0]).toHaveProperty("chunkId");
   });
 });
