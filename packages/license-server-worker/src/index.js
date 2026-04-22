@@ -50,19 +50,62 @@ function getFetchHandler(env) {
   return handler;
 }
 
-app.all("*", async (c) => {
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function getCorsOrigin(request, env) {
+  const configured = env?.SKILLPACK_DASHBOARD_ORIGIN;
+  if (typeof configured === "string" && configured.length > 0) {
+    return configured;
+  }
+  return "*";
+}
+
+function withCors(response, request, env) {
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-origin", getCorsOrigin(request, env));
+  headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
+  headers.set("access-control-allow-headers", "content-type, x-api-key");
+  headers.set("access-control-max-age", "86400");
+  headers.set("vary", "Origin");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+async function delegateApi(c) {
   try {
     const fetchHandler = getFetchHandler(c.env);
-    return await fetchHandler(c.req.raw);
+    const response = await fetchHandler(c.req.raw);
+    return withCors(response, c.req.raw, c.env);
   } catch (error) {
-    return c.json(
-      {
-        error: error instanceof Error ? error.message : "worker_internal_error",
-      },
-      500
+    return withCors(
+      json(
+        {
+          error: error instanceof Error ? error.message : "worker_internal_error",
+        },
+        500
+      ),
+      c.req.raw,
+      c.env
     );
   }
-});
+}
+
+app.options("/v1/*", (c) =>
+  withCors(new Response(null, { status: 204 }), c.req.raw, c.env)
+);
+
+app.get("/healthz", delegateApi);
+app.all("/v1/*", delegateApi);
+
+app.all("*", () => json({ error: "not_found" }, 404));
 
 export default {
   fetch: app.fetch,

@@ -114,6 +114,8 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
     `
       SELECT customer_id, seat_id, operator_id, ticket_id, reason, attested_at_sec, recorded_at_sec, source
       FROM manual_attestations
+      WHERE (?1 IS NULL OR customer_id = ?1)
+        AND (?2 IS NULL OR seat_id = ?2)
       ORDER BY recorded_at_sec DESC, id DESC
     `
   );
@@ -144,6 +146,13 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
       LIMIT 1
     `
   );
+  const selectProviders = db.query(
+    `
+      SELECT provider_id, name
+      FROM providers
+      ORDER BY provider_id
+    `
+  );
   const upsertProvider = db.query(
     `
       INSERT INTO providers (provider_id, name, updated_at_sec)
@@ -162,6 +171,14 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
       LIMIT 1
     `
   );
+  const selectCustomers = db.query(
+    `
+      SELECT provider_id, customer_id, name
+      FROM customers
+      WHERE (?1 IS NULL OR provider_id = ?1)
+      ORDER BY provider_id, customer_id
+    `
+  );
   const upsertCustomer = db.query(
     `
       INSERT INTO customers (provider_id, customer_id, name, updated_at_sec)
@@ -178,6 +195,15 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
       FROM workspaces
       WHERE workspace_id = ?1
       LIMIT 1
+    `
+  );
+  const selectWorkspaces = db.query(
+    `
+      SELECT workspace_id, provider_id, customer_id, name, status
+      FROM workspaces
+      WHERE (?1 IS NULL OR provider_id = ?1)
+        AND (?2 IS NULL OR customer_id = ?2)
+      ORDER BY workspace_id
     `
   );
   const upsertWorkspace = db.query(
@@ -294,8 +320,8 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
         source: row.source,
       };
     },
-    listManualAttestations() {
-      return selectAllAttestations.all().map((row) => ({
+    listManualAttestations({ customerId, seatId } = {}) {
+      return selectAllAttestations.all(customerId ?? null, seatId ?? null).map((row) => ({
         customerId: row.customer_id,
         seatId: row.seat_id,
         operatorId: row.operator_id,
@@ -329,6 +355,12 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
         name: saved.name ?? null,
       };
     },
+    listProviders() {
+      return selectProviders.all().map((row) => ({
+        providerId: row.provider_id,
+        name: row.name ?? null,
+      }));
+    },
     saveCustomer(providerId, customer) {
       const provider = selectProvider.get(providerId);
       if (!provider) throw new Error("provider_not_found");
@@ -340,6 +372,13 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
         customerId: saved.customer_id,
         name: saved.name ?? null,
       };
+    },
+    listCustomers(providerId) {
+      return selectCustomers.all(providerId ?? null).map((row) => ({
+        providerId: row.provider_id,
+        customerId: row.customer_id,
+        name: row.name ?? null,
+      }));
     },
     saveWorkspace(workspace) {
       const provider = selectProvider.get(workspace.providerId);
@@ -373,6 +412,15 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
         name: saved.name ?? null,
         status: saved.status,
       };
+    },
+    listWorkspaces({ providerId, customerId } = {}) {
+      return selectWorkspaces.all(providerId ?? null, customerId ?? null).map((row) => ({
+        workspaceId: row.workspace_id,
+        providerId: row.provider_id,
+        customerId: row.customer_id,
+        name: row.name ?? null,
+        status: row.status,
+      }));
     },
     appendMeterEvents: db.transaction((events) => {
       for (const event of events) {

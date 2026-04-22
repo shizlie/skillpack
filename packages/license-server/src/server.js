@@ -65,14 +65,22 @@ function getProviderIdForCustomerRoute(pathname) {
 }
 
 function isManagementRoute(request, pathname) {
+  if (request.method === "GET" && pathname === "/v1/providers") return true;
   if (request.method === "POST" && pathname === "/v1/providers") return true;
+  if (request.method === "GET" && pathname === "/v1/workspaces") return true;
   if (request.method === "POST" && pathname === "/v1/workspaces") return true;
-  if (request.method === "POST" && getProviderIdForCustomerRoute(pathname)) return true;
+  if (
+    (request.method === "GET" || request.method === "POST") &&
+    getProviderIdForCustomerRoute(pathname)
+  ) {
+    return true;
+  }
   if (request.method === "POST" && pathname === "/v1/policies/issue") return true;
   if (request.method === "POST" && pathname === "/v1/policies/sync") return true;
   if (request.method === "POST" && pathname === "/v1/meter/upload") return true;
   if (request.method === "GET" && pathname === "/v1/usage/summary") return true;
   if (request.method === "POST" && pathname === "/v1/tsa/manual-attest") return true;
+  if (request.method === "GET" && pathname === "/v1/tsa/manual-attestations") return true;
   if (request.method === "GET" && pathname === "/v1/tsa/manual-attestations/latest") return true;
   return false;
 }
@@ -123,6 +131,16 @@ export function createLicenseFetchHandler({
       }
     }
 
+    if (request.method === "GET" && url.pathname === "/v1/providers") {
+      try {
+        const listProviders = getStoreMethod(leaseStore, "listProviders");
+        const providers = await listProviders();
+        return json({ providers });
+      } catch (error) {
+        return json({ error: error.message }, 400);
+      }
+    }
+
     const providerIdForCustomerRoute = getProviderIdForCustomerRoute(url.pathname);
     if (request.method === "POST" && providerIdForCustomerRoute) {
       try {
@@ -136,6 +154,16 @@ export function createLicenseFetchHandler({
       }
     }
 
+    if (request.method === "GET" && providerIdForCustomerRoute) {
+      try {
+        const listCustomers = getStoreMethod(leaseStore, "listCustomers");
+        const customers = await listCustomers(providerIdForCustomerRoute);
+        return json({ customers });
+      } catch (error) {
+        return json({ error: error.message }, 400);
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/v1/workspaces") {
       try {
         const body = await readBody(request);
@@ -145,6 +173,19 @@ export function createLicenseFetchHandler({
         return json({ accepted: true, workspace: saved });
       } catch (error) {
         return json({ accepted: false, error: error.message }, 400);
+      }
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/workspaces") {
+      try {
+        const listWorkspaces = getStoreMethod(leaseStore, "listWorkspaces");
+        const workspaces = await listWorkspaces({
+          providerId: url.searchParams.get("providerId") ?? undefined,
+          customerId: url.searchParams.get("customerId") ?? undefined,
+        });
+        return json({ workspaces });
+      } catch (error) {
+        return json({ error: error.message }, 400);
       }
     }
 
@@ -330,6 +371,21 @@ export function createLicenseFetchHandler({
         const storedRecord = { ...record, customerId, seatId };
         await leaseStore.addManualAttestation(storedRecord);
         return json({ accepted: true, record: storedRecord });
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 400);
+      }
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/tsa/manual-attestations") {
+      try {
+        const listManualAttestations = getStoreMethod(
+          leaseStore,
+          "listManualAttestations"
+        );
+        const customerId = url.searchParams.get("customerId") ?? undefined;
+        const seatId = url.searchParams.get("seatId") ?? undefined;
+        const records = await listManualAttestations({ customerId, seatId });
+        return json({ records });
       } catch (error) {
         return json({ accepted: false, error: error.message }, 400);
       }
