@@ -1,4 +1,4 @@
-# E2E Test Plan (AI-First, Minimal Human)
+# E2E Test Plan (Automation + Operator/Vendor Validation)
 
 ## Objective
 
@@ -9,7 +9,9 @@ Validate the full shipped user journey end-to-end with automation first:
 3. Runtime enforces lease + TSA policy correctly.
 4. Wiki is exposed via MCP tools/resources and is queryable.
 
-Human involvement is limited to one-time environment setup only.
+This runbook covers automation and operator/vendor validation before handoff.
+Receiver-side acceptance after bundle delivery is documented separately in:
+`docs/runbooks/receiver-verify-install.md`.
 
 ## Scope
 
@@ -37,6 +39,13 @@ Why this split:
 
 - Current product surface is CLI/API/MCP over stdio, not web UI.
 - Playwright/browser adds little value today vs deterministic protocol-level E2E.
+
+## Personas and ownership
+
+- Automation (CI/agents): runs deterministic gates (`bun test`, e2e, parity/fallback/resilience).
+- Operator/Vendor: runs manual pre-handoff checks using CLI and runtime commands.
+- Receiver end user: validates delivered experience in Claude with prompt-based UAT.
+  Receiver UAT is out of scope for this runbook and lives in `receiver-verify-install.md`.
 
 ## Full User Journey to Simulate
 
@@ -186,9 +195,11 @@ Suggested command:
 bun run bundle:laws-consultant && bun run test:e2e
 ```
 
-### UAT (manual acceptance)
+### Operator/Vendor UAT (manual pre-handoff)
 
-- Install/load generated `.mcpb` in target runtime/client.
+- Validate generated `.mcpb` and runtime behavior before sending bundle to receiver.
+- Ensure receiver can retrieve lease/context from runtime via `wiki_runtime_info`
+  (bundle version, lease mode, seat, workspace/policy IDs when available).
 - Run 5 representative consultant prompts:
   - PDPA breach notification obligations
   - CII obligations under Cybersecurity Act
@@ -199,7 +210,98 @@ bun run bundle:laws-consultant && bun run test:e2e
   - cite wiki evidence pages,
   - separate law vs guidance,
   - include risk notes and next actions,
-  - avoid unqualified legal-advice claims.
+  - avoid unqualified legal-advice claims,
+  - explicitly flag non-wiki claims (memory/external) as non-wiki.
+
+Receiver-facing UAT flow (post-delivery): `docs/runbooks/receiver-verify-install.md` Step 6.
+
+### Wiki-RAG rollout UAT matrix (runtime + fallback)
+
+Run from repo root unless noted.
+
+1. Build release bundle:
+
+```bash
+bun run bundle:laws-consultant
+```
+
+2. Run regression gates:
+
+```bash
+bun run test:wiki-rag
+bun run test:wiki-rag-fallback
+bun run test:wiki-rag-parity
+bun run test:wiki-rag-resilience
+bun test packages/wiki-mcp/test/wiki-mcp.test.js
+```
+
+3. Verify bundle embeds preindex artifacts:
+
+```bash
+unzip -l dist/skills/laws-consultant-<version>.mcpb | rg "wiki-rag|knowledge/wiki"
+```
+
+Expected:
+
+- `skill/knowledge/wiki-rag.db`
+- `skill/knowledge/wiki-rag.json`
+
+4. Runtime behavior matrix:
+
+- Legacy baseline:
+
+```bash
+printf '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wiki_search","arguments":{"query":"copyright","limit":2}}}\n' \
+| RAG_ENGINE=legacy RAG_FAIL_OPEN=true node dist/skills/laws-consultant-<version>/runtime/server.mjs dist/skills/laws-consultant-<version>/laws-consultant-<version>.mcpb dist/skills/laws-consultant-<version>/laws-consultant-<version>.public.pem
+```
+
+- SQLite mode in release directory:
+
+```bash
+cd dist/skills/laws-consultant-<version>
+printf '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wiki_search","arguments":{"query":"copyright","limit":2}}}\n' \
+| RAG_ENGINE=sqlite RAG_FAIL_OPEN=true node runtime/server.mjs laws-consultant-<version>.mcpb laws-consultant-<version>.public.pem
+```
+
+- Fail-closed behavior:
+
+```bash
+printf '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wiki_search","arguments":{"query":"copyright","limit":2}}}\n' \
+| RAG_ENGINE=sqlite RAG_FAIL_OPEN=false node runtime/server.mjs laws-consultant-<version>.mcpb laws-consultant-<version>.public.pem
+```
+
+Expected:
+
+- `RAG_ENGINE=legacy`: returns normal results.
+- `RAG_ENGINE=sqlite` + fail-open true: returns sqlite results; if sqlite initialization fails, returns legacy results with warning.
+- `RAG_ENGINE=sqlite` + fail-open false: hard error on sqlite initialization/query failure.
+
+5. Receiver-folder transfer simulation (same machine, separate folder):
+
+```bash
+VERSION="$(cat VERSION)"
+RECEIVER_DIR="/tmp/receiver-test-$VERSION"
+
+rm -rf "$RECEIVER_DIR"
+mkdir -p "$RECEIVER_DIR"
+cp "dist/skills/laws-consultant-$VERSION-bundle.tar.gz" "$RECEIVER_DIR/"
+
+cd "$RECEIVER_DIR"
+tar -xzf "laws-consultant-$VERSION-bundle.tar.gz"
+cd "laws-consultant-$VERSION"
+
+./runtime/receiver-verify-install.sh
+
+printf '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"wiki_search","arguments":{"query":"copyright","limit":2}}}\n' \
+| RAG_ENGINE=sqlite RAG_FAIL_OPEN=false node runtime/server.mjs "laws-consultant-$VERSION.mcpb" "laws-consultant-$VERSION.public.pem"
+```
+
+Expected:
+
+- receiver script passes all verification/install steps.
+- sqlite query succeeds from extracted receiver folder (no dependency on repo-local paths).
+
+Reference: `docs/runbooks/receiver-verify-install.md` (Step 1 and Step 1B).
 
 ## Decision
 

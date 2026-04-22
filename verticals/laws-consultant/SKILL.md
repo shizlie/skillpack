@@ -27,13 +27,21 @@ This skill provides compliance-oriented research assistance for Singapore digita
 3. Flag uncertainty when interpretation is ambiguous.
 4. Do not present outputs as legal advice.
 5. If evidence is missing, say "insufficient source support" and identify missing sources.
+6. At skill start, call `wiki_runtime_info` and show runtime context when available (bundle version, lease mode, seat, workspace/policy IDs).
+7. In every answer, label provenance per claim:
+   - `WIKI` (with page slug citation and retrieval method: `wiki_search` or `wiki_read_page`),
+   - `NON-WIKI: model memory`,
+   - `NON-WIKI: external`.
+   Never present non-wiki claims as if they were wiki-cited.
 
 ## Output Format
 
 Use this structure:
 
+- `Runtime Context` (from `wiki_runtime_info`, when available)
 - `Summary`
 - `Evidence` (page slugs used)
+- `Provenance` (`WIKI` vs `NON-WIKI` labels for key claims, including retrieval method for each wiki citation)
 - `Risk Notes`
 - `Suggested Next Actions`
 

@@ -1,10 +1,13 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const DEFAULT_PROTOCOL_VERSION = "2024-11-05";
 const DEFAULT_SERVER_INFO = { name: "skillpack-wiki-mcp", version: "0.1.0" };
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 20;
+const SQLITE_ENGINE = "sqlite";
+const LEGACY_ENGINE = "legacy";
 
 function normalizePageName(pageName) {
   if (typeof pageName !== "string" || pageName.trim().length === 0) {
@@ -30,6 +33,22 @@ function parsePageUri(uri) {
 function clampLimit(limit) {
   if (!Number.isInteger(limit) || limit <= 0) return DEFAULT_LIMIT;
   return Math.min(limit, MAX_LIMIT);
+}
+
+function parseBool(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+export function readWikiEngineConfig(env = process.env) {
+  const rawEngine = (env.RAG_ENGINE ?? LEGACY_ENGINE).toLowerCase();
+  return {
+    engine: rawEngine === SQLITE_ENGINE ? SQLITE_ENGINE : LEGACY_ENGINE,
+    failOpen: parseBool(env.RAG_FAIL_OPEN, true),
+  };
 }
 
 function countMatches(content, query) {
@@ -121,12 +140,98 @@ function jsonRpcError(id, code, message) {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
+function normalizeSqliteRows(rows, limit) {
+  return rows.slice(0, clampLimit(limit)).map((row, index) => {
+    const page = String(row.path ?? "").replace(/\.md$/i, "");
+    return {
+      page,
+      score: clampLimit(limit) - index,
+      snippet: String(row.text ?? "").replace(/\s+/g, " ").trim().slice(0, 220),
+    };
+  });
+}
+
+function createSqliteSearchRunner({
+  wikiDir,
+  dbPath = path.join(wikiDir, ".wiki-rag.db"),
+  cliPath = path.resolve(process.cwd(), "wiki-rag", "src", "cli.ts"),
+  env = process.env,
+  cwd = process.cwd(),
+} = {}) {
+  let isReady = false;
+
+  const runCli = (args) => {
+    const result = spawnSync("bun", [cliPath, ...args], {
+      cwd,
+      env,
+      encoding: "utf8",
+    });
+    if (result.status !== 0) {
+      throw new Error((result.stderr ?? "").trim() || `wiki_rag_cli_failed:${args.join(" ")}`);
+    }
+    return (result.stdout ?? "").trim();
+  };
+
+  const ensureReady = () => {
+    if (isReady) return;
+    runCli(["index", "--db", dbPath, "--root", wikiDir]);
+    isReady = true;
+  };
+
+  return (query, limit) => {
+    ensureReady();
+    const output = runCli([
+      "query",
+      "--db",
+      dbPath,
+      "--query",
+      query,
+      "--limit",
+      String(clampLimit(limit)),
+    ]);
+    const parsed = JSON.parse(output || "{}");
+    return normalizeSqliteRows(Array.isArray(parsed.hits) ? parsed.hits : [], limit);
+  };
+}
+
+function createSearchWithFallback({
+  engine,
+  failOpen,
+  legacySearch,
+  sqliteSearch,
+  log = () => {},
+}) {
+  return (query, limit) => {
+    if (engine !== SQLITE_ENGINE) return legacySearch(query, limit);
+    try {
+      return sqliteSearch(query, limit);
+    } catch (error) {
+      if (!failOpen) throw error;
+      const reason = error instanceof Error ? error.message : String(error);
+      log(`[WARN] sqlite wiki search failed, falling back to legacy: ${reason}`);
+      return legacySearch(query, limit);
+    }
+  };
+}
+
 export function createWikiMcpServer({
   wikiDir = path.join(process.cwd(), "verticals/laws-consultant/wiki"),
   protocolVersion = DEFAULT_PROTOCOL_VERSION,
   serverInfo = DEFAULT_SERVER_INFO,
+  ragConfig = readWikiEngineConfig(process.env),
+  sqliteSearchRunner,
 } = {}) {
   const wiki = createWikiRepository({ wikiDir });
+  const sqliteSearch =
+    sqliteSearchRunner ??
+    createSqliteSearchRunner({ wikiDir });
+  const search = createSearchWithFallback({
+    engine: ragConfig.engine,
+    failOpen: ragConfig.failOpen,
+    legacySearch: (query, limit) => wiki.search(query, { limit }),
+    sqliteSearch: (query, limit) => sqliteSearch(query, limit),
+    log: (message) => process.stderr.write(`${message}\n`),
+  });
 
   async function handle(request) {
     const { id, method, params = {} } = request ?? {};
@@ -168,6 +273,15 @@ export function createWikiMcpServer({
                 required: ["page"],
               },
             },
+            {
+              name: "wiki_runtime_info",
+              description: "Get available runtime metadata (standalone mode has no lease context).",
+              inputSchema: {
+                type: "object",
+                properties: {},
+                additionalProperties: false,
+              },
+            },
           ],
         });
       }
@@ -176,7 +290,7 @@ export function createWikiMcpServer({
         const name = params.name;
         const args = params.arguments ?? {};
         if (name === "wiki_search") {
-          const results = wiki.search(args.query, { limit: args.limit });
+          const results = search(args.query, args.limit);
           return jsonRpcResult(id, {
             content: [{ type: "text", text: formatSearchResult(results) }],
             isError: false,
@@ -187,6 +301,25 @@ export function createWikiMcpServer({
           return jsonRpcResult(id, {
             content: [{ type: "text", text }],
             isError: false,
+          });
+        }
+        if (name === "wiki_runtime_info") {
+          const info = {
+            source: "standalone_wiki_mcp",
+            bundle: null,
+            lease: null,
+            seat: null,
+            policy: null,
+            retrieval: {
+              engineRequested: ragConfig.engine,
+              failOpen: ragConfig.failOpen,
+            },
+            note: "No lease/workspace/seat metadata in standalone mode. Use bundled runtime server for full runtime info.",
+          };
+          return jsonRpcResult(id, {
+            content: [{ type: "text", text: JSON.stringify(info, null, 2) }],
+            isError: false,
+            metadata: info,
           });
         }
         return jsonRpcError(id, -32602, "unknown_tool");

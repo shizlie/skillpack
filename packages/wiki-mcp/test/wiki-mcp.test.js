@@ -61,7 +61,7 @@ test("mcp server handles initialize/tools/resources/read/search", async () => {
     method: "tools/list",
     params: {},
   });
-  expect(tools.result.tools.length).toBe(2);
+  expect(tools.result.tools.length).toBe(3);
 
   const search = await mcp.handle({
     jsonrpc: "2.0",
@@ -90,4 +90,16 @@ test("mcp server handles initialize/tools/resources/read/search", async () => {
     params: { uri: "wiki://page/alpha" },
   });
   expect(read.result.contents[0].text).toContain("# Alpha");
+
+  const runtimeInfo = await mcp.handle({
+    jsonrpc: "2.0",
+    id: 6,
+    method: "tools/call",
+    params: {
+      name: "wiki_runtime_info",
+      arguments: {},
+    },
+  });
+  expect(runtimeInfo.result.isError).toBe(false);
+  expect(runtimeInfo.result.content[0].text).toContain("standalone_wiki_mcp");
 });
