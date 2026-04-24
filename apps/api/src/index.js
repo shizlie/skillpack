@@ -69,7 +69,10 @@ function withCors(response, request, env) {
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", getCorsOrigin(request, env));
   headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
-  headers.set("access-control-allow-headers", "content-type, x-api-key");
+  headers.set(
+    "access-control-allow-headers",
+    "content-type, x-api-key, x-skillpack-lease-token"
+  );
   headers.set("access-control-max-age", "86400");
   headers.set("vary", "Origin");
   return new Response(response.body, {

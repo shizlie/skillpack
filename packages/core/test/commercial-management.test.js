@@ -208,3 +208,125 @@ test("commercial api: create provider with no name returns null name", async () 
   const body = await res.json();
   expect(body.provider.name).toBeNull();
 });
+
+test("direct meter upload derives accepted usage context from the lease", async () => {
+  const keys = generateEd25519KeyPair();
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: "mgmt-key",
+  });
+  const headers = { "content-type": "application/json", "x-api-key": "mgmt-key" };
+
+  await fetch(
+    new Request("http://local/v1/providers", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ providerId: "prov-1", name: "Provider One" }),
+    })
+  );
+  await fetch(
+    new Request("http://local/v1/providers/prov-1/customers", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ customerId: "cust-1", name: "Customer One" }),
+    })
+  );
+  await fetch(
+    new Request("http://local/v1/workspaces", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        workspaceId: "ws-1",
+        providerId: "prov-1",
+        customerId: "cust-1",
+        name: "Workspace One",
+      }),
+    })
+  );
+
+  const leaseIssue = await fetch(
+    new Request("http://local/v1/leases/issue", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        customerId: "cust-1",
+        seatId: "seat-1",
+        providerId: "prov-1",
+        workspaceId: "ws-1",
+        skillId: "laws-consultant",
+        bundleId: "laws-consultant-1.0.0",
+      }),
+    })
+  );
+  expect(leaseIssue.status).toBe(200);
+  const { leaseToken } = await leaseIssue.json();
+
+  const upload = await fetch(
+    new Request("http://local/v1/meter/upload", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-skillpack-lease-token": leaseToken,
+      },
+      body: JSON.stringify({
+        events: [
+          {
+            prevHash: "GENESIS",
+            seq: 0,
+            at: 1_800_000_100,
+            kind: "tool_call",
+            seatId: "seat-1",
+            tool: "wiki_search",
+            usage: { unit: "tool_call", delta: 1 },
+            providerId: "forged-provider",
+            workspaceId: "forged-workspace",
+          },
+        ],
+      }),
+    })
+  );
+
+  expect(upload.status).toBe(200);
+  expect(await upload.json()).toMatchObject({
+    accepted: true,
+    mode: "direct",
+    ack: { count: 1 },
+  });
+
+  const summary = await fetch(
+    new Request("http://local/v1/usage/summary?workspaceId=ws-1", {
+      headers: { "x-api-key": "mgmt-key" },
+    })
+  );
+  expect(summary.status).toBe(200);
+  const body = await summary.json();
+  expect(body.summary[0]).toMatchObject({
+    providerId: "prov-1",
+    customerId: "cust-1",
+    workspaceId: "ws-1",
+    seatId: "seat-1",
+    skillId: "laws-consultant",
+    bundleId: "laws-consultant-1.0.0",
+  });
+});
+
+test("management meter upload still requires x-api-key when no lease token is present", async () => {
+  const fetch = makeHandler();
+
+  const upload = await fetch(
+    new Request("http://local/v1/meter/upload", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceId: "ws-1",
+        events: [],
+      }),
+    })
+  );
+
+  expect(upload.status).toBe(401);
+  expect(await upload.json()).toEqual({ error: "unauthorized" });
+});

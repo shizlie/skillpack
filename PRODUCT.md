@@ -100,10 +100,15 @@ Rule: metering and billing architecture should be centered on these product iden
 
 ## 3) Plain Glossary
 
-- **License Server**: service that issues and verifies signed permission tokens and owns server-side policy and ledger state.
+- **Skillpack Control Plane**: the hosted platform operated by skillpack. It owns lease, policy, ingest, usage ledger, and vendor-facing operations surfaces. Because the project is open-source, vendors may fork or self-host compatible parts of this stack. The hosted skillpack dashboard can still include premium features.
+- **Vendor Self-Host Control Plane**: vendor-operated deployment of the same control-plane responsibilities: lease, policy, ingest, usage ledger, and support workflows.
+- **License Server**: the API/service layer inside a control plane that issues and verifies signed permission tokens and owns server-side policy and ledger state.
 - **Lease Token**: signed permission ticket with expiry and monotonic counter.
 - **TSA**: trusted time source. Used to reason about time freshness in disconnected ops.
 - **Manual TSA Attestation**: operator-provided emergency record when TSA freshness is expired.
+- **Skill Execution Plane**: the agent, MCP host, or local client that actually uses the skill.
+- **Local Meter Client**: bundle-local helper that does local lease/policy checks, meter capture, and sync routing. It does not execute the skill itself.
+- **Skillpack Edge Gateway**: optional site-level local service for restricted or offline customer environments. It sits outside `.mcpb`, can serve many skills and machines, and should be versioned and deployed independently from any single skill bundle.
 - **Meter Chain**: append-only usage log where each event links to previous hash/HMAC.
 - **Usage Ledger**: provider-side database of accepted meter events after sync.
 - **Billing**: rating and invoicing layer derived from ledgered usage, not raw runtime files.
@@ -115,17 +120,31 @@ Rule: metering and billing architecture should be centered on these product iden
 The product has one core job:
 
 1. let providers ship skills into offline customer environments
-2. let those skills run under local enforcement
+2. let those skills run in the customer's actual execution environment without requiring a separate per-skill runtime server
 3. capture usage locally without requiring constant connectivity
 4. sync that usage back into a durable system of record
 5. turn that system of record into analytics, billing, and operations workflows
 
 At a high level:
 
-- the runtime is the edge enforcement point
+- the skill execution plane is where the skill actually runs, it is the end users' agents
+- the local meter client is the edge enforcement and capture point
 - the control plane is the source of truth
 - the meter log is a transport artifact, not the business database
 - billing sits above the usage ledger, not inside the runtime
+
+Deployment shape:
+
+- many `.mcpb` bundles per vendor is normal
+- one hosted `skillpack control plane` is normal
+- one optional `vendor self-host control plane` is valid
+- one optional `Skillpack Edge Gateway` per customer site or network is the right shape when many skills, many agents, or restricted egress must be supported
+
+Design rule:
+
+- put bundle-scoped helper logic inside `.mcpb`
+- keep shared site infrastructure outside `.mcpb`
+- do not duplicate a local server into every skill bundle
 
 This matters because we support providers with many skills and each skill may expose many tools. The architecture must scale by provider, workspace, seat, skill, and tool without changing the core operating model.
 
@@ -149,11 +168,32 @@ What it owns:
 - pricing definitions
 - customer/workspace relationships
 
-### B) Control Plane
+### B) Skillpack Control Plane
 
 Who uses it:
 
-- provider systems
+- vendors using the hosted skillpack platform
+- dashboard operators
+- automation and support workflows
+
+What it owns:
+
+- hosted API and dashboard
+- lease issuance and verification
+- policy publication and sync
+- attestation persistence
+- ingest entrypoints
+- provider-side usage ledger
+
+Key principle:
+
+- this is the default hosted control plane operated by us
+
+### C) Vendor Self-Host Control Plane
+
+Who uses it:
+
+- vendor systems
 - CLI
 - deployment automation
 
@@ -161,32 +201,70 @@ What it owns:
 
 - lease issuance and verification
 - policy publication and sync
-- revocation semantics
 - TSA / manual attestation records
+- ingest entrypoints
+- usage ledger and support workflows
 
 Key principle:
 
-- the control plane decides what is allowed
+- this is the vendor-operated alternative to the hosted skillpack control plane
 
-### C) Runtime Plane
+### D) Skill Execution Plane
 
 Who uses it:
 
-- customer-side local runtime
 - agent / MCP client
+- skill host that actually runs the bundle's tools
 
 What it owns:
 
-- local lease validation
-- local policy enforcement
-- local tool execution
-- local append-only meter capture
+- actual skill execution
+- tool invocation lifecycle
+- skill-facing request/response flow
 
 Key principle:
 
-- the runtime must continue operating safely when disconnected
+- this is where the skill runs; it should not depend on a separate required per-skill runtime server
 
-### D) Ingestion Plane
+### E) Local Meter Client Plane
+
+Who uses it:
+
+- bundle-local helper code shipped with the skill
+- skill execution plane
+
+What it owns:
+
+- local lease and policy cache
+- local validation needed for disconnected operation
+- local append-only meter capture
+- sync routing choice: direct upstream, edge gateway, or local spool
+
+Key principle:
+
+- this is bundle-scoped logic and can live inside `.mcpb`
+
+### F) Edge Gateway Plane
+
+Who uses it:
+
+- customer IT
+- restricted-network deployments
+- many-skill or many-machine customer sites
+
+What it owns:
+
+- local intake API for many skills and machines
+- offline queue or spool
+- retry, batching, and scheduled upstream sync
+- one approved egress point
+- site-level audit and operational state
+
+Key principle:
+
+- the edge gateway is infrastructure, not skill content, so it must stay outside `.mcpb`
+
+### G) Ingestion Plane
 
 Who uses it:
 
@@ -205,7 +283,7 @@ Key principle:
 
 - ingestion turns local runtime evidence into server-side accepted records
 
-### E) Ledger Plane
+### H) Ledger Plane
 
 Who uses it:
 
@@ -225,7 +303,7 @@ Key principle:
 
 - this is the product's system of record for usage
 
-### F) Billing Plane
+### I) Billing Plane
 
 Who uses it:
 
@@ -284,17 +362,20 @@ flowchart LR
     end
 
     subgraph Customer["Customer environment"]
-      RT["Embedded Runtime"]
-      LT["Lease + Policy"]
+      AG["Agent / MCP Host"]
+      SK["Skill"]
+      LMC["Local Meter Client"]
       MLOG[("Local Meter Chain")]
-      AG["Agent / MCP Client"]
-      AG --> RT
-      LT --> RT
-      RT --> MLOG
+      EG["Optional Edge Gateway"]
+      AG --> SK
+      SK --> LMC
+      LMC --> MLOG
+      LMC --> EG
     end
 
-    CP -->|"issue lease / sync policy"| RT
-    MLOG -->|"reconnect upload"| IP
+    CP -->|"issue lease / sync policy"| LMC
+    LMC -->|"direct sync when allowed"| IP
+    EG -->|"batched / scheduled sync"| IP
 ```
 
 ### Data location summary
@@ -343,9 +424,9 @@ Rule:
 
 The meter flow should be understood as a staged pipeline:
 
-1. runtime captures usage locally
+1. local meter client captures usage locally alongside skill execution
 2. local events accumulate offline
-3. operator or sync agent uploads events
+3. the meter client either syncs directly or hands events to an edge gateway
 4. ingestion validates and accepts or rejects them
 5. accepted events become usage ledger rows
 6. billing and analytics read from the ledger
@@ -356,12 +437,14 @@ This is the core architecture for multi-provider and multi-tool support.
 
 - billable unit in v1: one increment per tool invocation
 - meter event granularity: per tool call, plus runtime lifecycle/supporting events
-- meter state is per runtime/seat execution context
+- meter state is per bundle/seat execution context
 - usage budgets are evaluated per seat and tool
 
 ### Sync semantics
 
 - sync is explicit and reconnect-oriented
+- preferred path is direct upload to a hosted or vendor self-host control plane
+- edge gateway is optional and only needed for restricted or offline site networking
 - uploads should be idempotent
 - acknowledgements should identify what range was accepted
 - server-side acceptance should attach provider/workspace/seat/lease context
@@ -433,17 +516,18 @@ Important product rule:
 
 ### Persona B: Customer Runtime Operator
 
-1. deploy runtime + skill in customer environment
-2. runtime validates lease locally
-3. skill executes and emits meter events
-4. during outage, apply attestation policy input
-5. reconnect and upload local usage
+1. deploy one or more skill bundles in the customer environment
+2. configure bundle-local meter client for direct sync, vendor sync, or edge gateway mode
+3. agent or MCP host uses the skill directly
+4. local meter client validates local lease/policy inputs and emits meter events
+5. during outage, apply attestation policy input
+6. reconnect and upload local usage directly or through the site gateway
 
 ### Persona C: Knowledge / Agent Operator
 
-1. start local skill runtime or Wiki MCP server
+1. start the actual skill host or Wiki MCP server
 2. call tools from agent
-3. receive results under local policy and license enforcement
+3. receive results while metering and local enforcement happen alongside execution, not in a separate required runtime service
 
 ---
 
@@ -452,8 +536,11 @@ Important product rule:
 | Component | Owns | Does not own |
 |---|---|---|
 | CLI (`skillpack`) | operator entrypoints, request shaping, upload orchestration, local output JSON | business source of truth |
-| License Server | lease issuance/verify, policy sync, attestation persistence, ingest entrypoints | local runtime execution |
-| Runtime | offline enforcement, grace behavior, local tool execution, local meter capture | provider billing state |
+| Skillpack Control Plane | hosted API, hosted dashboard, lease/policy/ingest/ledger workflows | local skill execution |
+| Vendor Self-Host Control Plane | vendor-operated lease/policy/ingest/ledger workflows | local skill execution |
+| License Server | lease issuance/verify, policy sync, attestation persistence, ingest entrypoints | local skill execution |
+| Local Meter Client | local lease/policy cache, local meter capture, sync routing | actual skill execution |
+| Skillpack Edge Gateway | site-level intake, queueing, retry, batching, one egress point for many skills | skill content inside `.mcpb` |
 | Crypto + Protocol libs | signing/verify + schema/rule validation | transport and storage policy |
 | Usage Ledger store | accepted normalized usage facts | local execution |
 | Billing layer | rating and invoice logic | local enforcement |
@@ -525,7 +612,7 @@ sequenceDiagram
     participant Ops as Provider Ops
     participant CLI as skillpack CLI
     participant CP as Control Plane
-    participant RT as Customer Runtime
+    participant LMC as Local Meter Client
     participant LOG as Local Meter Log
     participant IP as Ingestion Plane
     participant LEDGER as Usage Ledger
@@ -533,9 +620,9 @@ sequenceDiagram
     Ops->>CLI: issue lease command
     CLI->>CP: POST /v1/leases/issue
     CP-->>CLI: signed leaseToken + payload
-    Ops->>RT: provide lease + policy
-    RT->>RT: verify signature/time/policy
-    RT->>LOG: append runtime + tool events
+    Ops->>LMC: provide lease + policy inputs
+    LMC->>LMC: verify signature/time/policy
+    LMC->>LOG: append meter + lifecycle events
     Ops->>CLI: meter upload
     CLI->>IP: POST /v1/meter/upload
     IP->>LEDGER: persist accepted usage
@@ -584,7 +671,7 @@ sequenceDiagram
 Implemented today:
 
 - core control plane mechanics
-- runtime-side lease and policy enforcement
+- local meter client-side lease and policy enforcement
 - local meter capture
 - explicit meter upload endpoint
 - server-side accepted usage summary
@@ -607,14 +694,14 @@ Not yet complete at product level:
 
 `bun run test:unit`
 
-- validates crypto, protocol rules, server handlers, CLI behavior, runtime checks, wiki MCP primitives
+- validates crypto, protocol rules, server handlers, CLI behavior, local enforcement checks, wiki MCP primitives
 
 ### Cross-package Journey Layer
 
 `bun run test:e2e`
 
 - Journey 1: issue / verify / run / meter chain
-- Journey 2: TSA-expired -> manual attestation -> runtime acceptance
+- Journey 2: TSA-expired -> manual attestation -> local enforcement acceptance
 - Journey 3: Wiki MCP stdio query / read path
 
 Current status:
@@ -646,7 +733,7 @@ Current naming conflates library vs. deployable:
 
 ```
 packages/
-  # Pure libraries — no runtime/deploy concern
+  # Pure libraries — no deploy concern
   core/              ← rename from license-server
   crypto/            (unchanged)
   protocol/          (unchanged)
@@ -656,7 +743,7 @@ packages/
   api-worker/        ← rename from license-server-worker
   dashboard-worker/  (unchanged)
 
-  # Client + edge runtimes
+  # Client + edge components
   cli/               (unchanged)
   runtime/           (unchanged)
 
@@ -730,4 +817,3 @@ by role claim in `proxyApiRequest`.
 - [ ] Dashboard Vite build pipeline (post-LOI)
 - [ ] RBAC in dashboard proxy (post-LOI)
 - [ ] Semi-detached dashboard crypto: wire `@skillpack/crypto` verify/decode into dashboard UI (dep added, UI wiring deferred)
-

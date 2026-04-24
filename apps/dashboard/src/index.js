@@ -133,9 +133,17 @@ app.get("/healthz", (c) =>
 
 app.get("/app-config", (c) => {
   const publishableKey = getPublishableKey(c.env);
+  const secretKey = getSecretKey(c.env);
   return c.json({
     apiProxyBase: "/api",
     authMode: publishableKey ? "clerk" : "unconfigured",
+    apiBaseUrlConfigured:
+      typeof c.env?.SKILLPACK_API_BASE_URL === "string" &&
+      c.env.SKILLPACK_API_BASE_URL.length > 0,
+    apiManagementConfigured:
+      typeof c.env?.SKILLPACK_API_MANAGEMENT_KEY === "string" &&
+      c.env.SKILLPACK_API_MANAGEMENT_KEY.length > 0,
+    clerkBackendConfigured: Boolean(secretKey),
     clerkPublishableKey: publishableKey,
     clerkFrontendApiHost: decodeFrontendApiHost(publishableKey),
     clerkSignInUrl: c.env?.SKILLPACK_CLERK_SIGN_IN_URL ?? null,

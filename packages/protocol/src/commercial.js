@@ -198,47 +198,81 @@ function isUsageEventCandidate(event) {
   return false;
 }
 
-function normalizeEvent(uploadContext, event) {
-  const workspaceFromEvent = pickNonEmptyString(
-    event.workspaceId,
-    event.data?.workspaceId
-  );
+function normalizeEvent(uploadContext, event, options = {}) {
+  const {
+    useAcceptedCommercialContextOnly = false,
+    useAcceptedSeatIdOnly = false,
+  } = options;
+  const workspaceFromEvent = useAcceptedCommercialContextOnly
+    ? null
+    : pickNonEmptyString(event.workspaceId, event.data?.workspaceId);
   if (workspaceFromEvent && workspaceFromEvent !== uploadContext.workspaceId) {
     throw new Error("meter_event_workspace_mismatch");
   }
 
-  const seatId = normalizeRequiredId(
-    { errorCode: "meter_event_invalid_seat_id", fallback: uploadContext.seatId ?? "default" },
-    event.seatId,
-    event.data?.seatId
-  );
+  const seatId = useAcceptedSeatIdOnly
+    ? normalizeRequiredId(
+        { errorCode: "meter_event_invalid_seat_id", fallback: uploadContext.seatId ?? "default" },
+        uploadContext.seatId
+      )
+    : normalizeRequiredId(
+        { errorCode: "meter_event_invalid_seat_id", fallback: uploadContext.seatId ?? "default" },
+        event.seatId,
+        event.data?.seatId
+      );
   const tool = normalizeRequiredId(
     { errorCode: "meter_event_invalid_tool" },
     event.tool,
     event.data?.tool
   );
   const usage = normalizeUsage(event);
-  const leaseJti = normalizeOptionalId(event.leaseJti, event.data?.leaseJti, uploadContext.leaseJti);
+  const leaseJti = useAcceptedCommercialContextOnly
+    ? normalizeOptionalId(uploadContext.leaseJti)
+    : normalizeOptionalId(event.leaseJti, event.data?.leaseJti, uploadContext.leaseJti);
+  const providerId = useAcceptedCommercialContextOnly
+    ? normalizeRequiredId(
+        { errorCode: "meter_event_invalid_provider_id" },
+        uploadContext.providerId
+      )
+    : normalizeRequiredId(
+        { errorCode: "meter_event_invalid_provider_id", fallback: uploadContext.providerId },
+        event.providerId,
+        event.data?.providerId
+      );
+  const customerId = useAcceptedCommercialContextOnly
+    ? normalizeRequiredId(
+        { errorCode: "meter_event_invalid_customer_id" },
+        uploadContext.customerId
+      )
+    : normalizeRequiredId(
+        { errorCode: "meter_event_invalid_customer_id", fallback: uploadContext.customerId },
+        event.customerId,
+        event.data?.customerId
+      );
+  const skillId = useAcceptedCommercialContextOnly
+    ? normalizeOptionalId(uploadContext.skillId)
+    : normalizeOptionalId(event.skillId, event.data?.skillId, uploadContext.skillId);
+  const bundleId = useAcceptedCommercialContextOnly
+    ? normalizeOptionalId(uploadContext.bundleId)
+    : normalizeOptionalId(event.bundleId, event.data?.bundleId, uploadContext.bundleId);
+  const leaseId = useAcceptedCommercialContextOnly
+    ? normalizeOptionalId(uploadContext.leaseId)
+    : normalizeOptionalId(event.leaseId, event.data?.leaseId, uploadContext.leaseId);
+  const policyId = useAcceptedCommercialContextOnly
+    ? normalizeOptionalId(uploadContext.policyId)
+    : normalizeOptionalId(event.policyId, event.data?.policyId, uploadContext.policyId);
 
   const normalized = {
     eventId: `${encodeURIComponent(uploadContext.workspaceId)}:${encodeURIComponent(seatId)}:${encodeURIComponent(leaseJti ?? "")}:${event.seq}`,
-    providerId: normalizeRequiredId(
-      { errorCode: "meter_event_invalid_provider_id", fallback: uploadContext.providerId },
-      event.providerId,
-      event.data?.providerId
-    ),
-    customerId: normalizeRequiredId(
-      { errorCode: "meter_event_invalid_customer_id", fallback: uploadContext.customerId },
-      event.customerId,
-      event.data?.customerId
-    ),
+    providerId,
+    customerId,
     workspaceId: uploadContext.workspaceId,
     seatId,
-    skillId: normalizeOptionalId(event.skillId, event.data?.skillId, uploadContext.skillId),
-    bundleId: normalizeOptionalId(event.bundleId, event.data?.bundleId, uploadContext.bundleId),
-    leaseId: normalizeOptionalId(event.leaseId, event.data?.leaseId, uploadContext.leaseId),
+    skillId,
+    bundleId,
+    leaseId,
     leaseJti,
-    policyId: normalizeOptionalId(event.policyId, event.data?.policyId, uploadContext.policyId),
+    policyId,
     tool,
     eventKind: event.kind,
     usage,
@@ -251,6 +285,44 @@ function normalizeEvent(uploadContext, event) {
   const accepted = acceptedUsageEventSchema.safeParse(normalized);
   if (!accepted.success) throw new Error("accepted_usage_event_invalid_contract");
   return accepted.data;
+}
+
+export function validateDirectLeaseCommercialContext(payload) {
+  for (const key of ["providerId", "workspaceId", "skillId", "bundleId"]) {
+    if (typeof payload?.[key] !== "string" || payload[key].length === 0) {
+      throw new Error(`lease_payload_missing_${key}`);
+    }
+  }
+  return payload;
+}
+
+export function validateDirectMeterUploadContract(payload, acceptedContext) {
+  if (!isPlainObject(payload)) {
+    throw new Error("meter_upload_invalid_body");
+  }
+  if (!Array.isArray(payload.events)) {
+    throw new Error("meter_upload_missing_events");
+  }
+
+  const parsed = z
+    .object({
+      events: z.array(meterUploadEventSchema),
+    })
+    .strict()
+    .safeParse(payload);
+  if (!parsed.success) throw new Error("meter_upload_invalid_contract");
+
+  const events = [];
+  for (const event of parsed.data.events) {
+    if (!isUsageEventCandidate(event)) continue;
+    events.push(
+      normalizeEvent(acceptedContext, event, {
+        useAcceptedCommercialContextOnly: true,
+        useAcceptedSeatIdOnly: true,
+      })
+    );
+  }
+  return { workspaceId: acceptedContext.workspaceId, context: acceptedContext, events };
 }
 
 export function validateMeterUploadContract(payload) {

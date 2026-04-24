@@ -19,6 +19,9 @@ test("dashboard worker: serves shell and config", async () => {
   expect(await configRes.json()).toEqual({
     apiProxyBase: "/api",
     authMode: "clerk",
+    apiBaseUrlConfigured: false,
+    apiManagementConfigured: false,
+    clerkBackendConfigured: false,
     clerkPublishableKey:
       "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
     clerkFrontendApiHost: "example.clerk.accounts.dev",

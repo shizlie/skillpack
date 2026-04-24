@@ -35,11 +35,16 @@ import {
   readWikiEngineConfig,
   normalizeSqliteRows,
 } from "./wiki-rag-shared.mjs";
+import { createLocalMeterClient } from "./local-meter-client.mjs";
+import { createFileMeterStore } from "./meter-store.mjs";
+import {
+  createDirectUploadTransport,
+  createNoopUploadTransport,
+} from "./direct-upload-transport.mjs";
 export { readWikiEngineConfig } from "./wiki-rag-shared.mjs";
 
 // ── lease verification (inlined from @skillpack/runtime + @skillpack/crypto) ─
 
-const GENESIS_HASH = "GENESIS";
 const DEFAULT_GRACE_SEC = 72 * 60 * 60;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -87,25 +92,6 @@ function verifyLeaseForRuntime({ leaseToken, publicKeyPem, nowSec = Math.floor(D
   if (nowSec <= payload.exp) return { mode: "active", payload };
   if (nowSec <= payload.exp + graceSec) return { mode: "grace", payload };
   throw new Error("runtime_lease_expired_past_grace");
-}
-
-// ── meter (inlined from @skillpack/crypto) ────────────────────────────────────
-
-function validateMeterEvent(event) {
-  if (!event || typeof event !== "object" || Array.isArray(event)) throw new Error("meter_event_invalid_object");
-  if (typeof event.prevHash !== "string" || event.prevHash.length === 0) throw new Error("meter_event_invalid_prev_hash");
-  if (!Number.isInteger(event.seq) || event.seq < 0) throw new Error("meter_event_invalid_seq");
-  if (!Number.isInteger(event.at) || event.at <= 0) throw new Error("meter_event_invalid_time");
-  if (typeof event.kind !== "string" || event.kind.length === 0) throw new Error("meter_event_invalid_kind");
-}
-
-function chainMeterEvent({ prevHash = GENESIS_HASH, seq, at, kind, data }, chainKeyB64Url) {
-  const event = { prevHash, seq, at, kind, data };
-  validateMeterEvent(event);
-  if (!chainKeyB64Url) throw new Error("meter_missing_key");
-  const canonical = canonicalJson(event);
-  const hmac = crypto.createHmac("sha256", fromBase64Url(chainKeyB64Url)).update(canonical).digest();
-  return { ...event, hash: toBase64Url(hmac) };
 }
 
 // ── policy (mirrored from @skillpack/protocol policy semantics) ─────────────
@@ -814,89 +800,92 @@ const sqliteSearch = createSqliteWikiSearchRunner({
 const meterLogPath = path.join(bundleDir, "meter.jsonl");
 const meterStatePath = path.join(bundleDir, "meter-state.json");
 const currentLeaseJti = leaseResult.payload.jti;
-let chainKey;
-let meterSeq;
-let meterPrevHash;
 let meterConsecutiveFailures = 0;
 const METER_FAILURE_WARN_THRESHOLD = 3;
 const toolUsageBySeat = new Map();
+const directMode = process.env.SKILLPACK_SYNC_MODE === "direct";
+const controlPlaneBaseUrl =
+  typeof process.env.SKILLPACK_CONTROL_PLANE_URL === "string" &&
+  process.env.SKILLPACK_CONTROL_PLANE_URL.length > 0
+    ? process.env.SKILLPACK_CONTROL_PLANE_URL
+    : null;
+const meterStore = createFileMeterStore({
+  meterLogPath,
+  meterStatePath,
+  currentLeaseJti,
+});
+const restoredMeterState = meterStore.readState();
+if (restoredMeterState?.toolUsageCounts) {
+  for (const [key, value] of Object.entries(restoredMeterState.toolUsageCounts)) {
+    if (typeof value === "number" && value >= 0) {
+      toolUsageBySeat.set(key, value);
+    }
+  }
+}
+const localMeterClient = createLocalMeterClient({
+  chainKey:
+    restoredMeterState?.chainKey ??
+    toBase64Url(crypto.randomBytes(32)),
+  leaseToken: licenseData.leaseToken,
+  currentLeaseJti,
+  context: {
+    workspaceId: leaseResult.payload.workspaceId,
+    providerId: leaseResult.payload.providerId,
+    customerId: leaseResult.payload.sub,
+    skillId: leaseResult.payload.skillId,
+    bundleId: leaseResult.payload.bundleId,
+  },
+  meterStore,
+  transport:
+    directMode && controlPlaneBaseUrl
+      ? createDirectUploadTransport({ baseUrl: controlPlaneBaseUrl })
+      : createNoopUploadTransport(),
+  now: () => Math.floor(Date.now() / 1000),
+});
+let meterQueue = Promise.resolve();
 
-function persistMeterState() {
-  try {
-    fs.writeFileSync(
-      meterStatePath,
-      JSON.stringify(
-        {
-          chainKey,
-          seq: meterSeq,
-          prevHash: meterPrevHash,
-          leaseJti: currentLeaseJti,
-          toolUsageCounts: Object.fromEntries(toolUsageBySeat),
-          updatedAt: Math.floor(Date.now() / 1000),
-        },
-        null,
-        2
-      ) + "\n",
-      { mode: 0o600 }
+function persistToolUsageCounts() {
+  meterStore.writeState({
+    toolUsageCounts: Object.fromEntries(toolUsageBySeat),
+    updatedAt: Math.floor(Date.now() / 1000),
+  });
+}
+
+function warnOnMeterFailure() {
+  meterConsecutiveFailures += 1;
+  if (meterConsecutiveFailures >= METER_FAILURE_WARN_THRESHOLD) {
+    process.stderr.write(
+      "[WARN] meter write failed " +
+        meterConsecutiveFailures +
+        " consecutive times — check disk space and permissions at " +
+        meterLogPath +
+        "\n"
     );
-  } catch {
-    // non-fatal
   }
 }
 
-function restoreOrCreateMeterState() {
-  try {
-    if (fs.existsSync(meterStatePath)) {
-      const parsed = JSON.parse(fs.readFileSync(meterStatePath, "utf8"));
-      if (
-        typeof parsed.chainKey === "string" &&
-        parsed.chainKey.length > 0 &&
-        Number.isInteger(parsed.seq) &&
-        parsed.seq >= 0 &&
-        typeof parsed.prevHash === "string" &&
-        parsed.prevHash.length > 0
-      ) {
-        chainKey = parsed.chainKey;
-        meterSeq = parsed.seq;
-        meterPrevHash = parsed.prevHash;
-        if (parsed.toolUsageCounts && typeof parsed.toolUsageCounts === "object") {
-          for (const [k, v] of Object.entries(parsed.toolUsageCounts)) {
-            if (typeof v === "number" && v >= 0) toolUsageBySeat.set(k, v);
-          }
-        }
-        return parsed.leaseJti && parsed.leaseJti !== currentLeaseJti;
+function recordMeterEvent(kind, data = {}) {
+  const task = meterQueue.then(async () => {
+    try {
+      const event = await localMeterClient.appendAndFlush(kind, data);
+      if (!event) {
+        warnOnMeterFailure();
+        return null;
       }
+      meterConsecutiveFailures = 0;
+      return event;
+    } catch {
+      warnOnMeterFailure();
+      return null;
     }
-  } catch {
-    // ignore corrupted state and rotate to a fresh chain state
-  }
-  chainKey = toBase64Url(crypto.randomBytes(32));
-  meterSeq = 0;
-  meterPrevHash = GENESIS_HASH;
-  persistMeterState();
-  return false;
+  });
+  meterQueue = task.catch(() => null);
+  return task;
 }
 
-function appendMeterEvent(kind, data = {}) {
-  const at = Math.floor(Date.now() / 1000);
-  const event = chainMeterEvent({ prevHash: meterPrevHash, seq: meterSeq, at, kind, data }, chainKey);
-  try {
-    fs.appendFileSync(meterLogPath, JSON.stringify(event) + "\n");
-  } catch {
-    meterConsecutiveFailures++;
-    if (meterConsecutiveFailures >= METER_FAILURE_WARN_THRESHOLD) {
-      process.stderr.write(
-        "[WARN] meter write failed " + meterConsecutiveFailures + " consecutive times — " +
-        "check disk space and permissions at " + meterLogPath + "\n"
-      );
-    }
-    return null;
-  }
-  meterConsecutiveFailures = 0;
-  meterPrevHash = event.hash;
-  meterSeq++;
-  persistMeterState();
-  return event;
+async function flushMeterQueue() {
+  await meterQueue;
+  await localMeterClient.flushPending();
 }
 
 function getToolUsageCount(seatId, toolName) {
@@ -906,6 +895,7 @@ function getToolUsageCount(seatId, toolName) {
 function incrementToolUsageCount(seatId, toolName) {
   const key = `${seatId}::${toolName}`;
   toolUsageBySeat.set(key, getToolUsageCount(seatId, toolName) + 1);
+  persistToolUsageCounts();
 }
 
 function evaluatePolicyForToolCall({ policy, seatId, toolName }) {
@@ -917,13 +907,12 @@ function evaluatePolicyForToolCall({ policy, seatId, toolName }) {
   });
 }
 
-const leaseChangedSinceLastSession = restoreOrCreateMeterState();
-if (leaseChangedSinceLastSession) {
-  appendMeterEvent("lease_refreshed", { jti: currentLeaseJti });
+if (localMeterClient.leaseChangedSinceLastSession) {
+  await recordMeterEvent("lease_refreshed", { jti: currentLeaseJti });
 }
 
 // Log session start
-appendMeterEvent("session_start", {
+await recordMeterEvent("session_start", {
   bundleId,
   version: manifest.version,
   sub: leaseResult.payload.sub,
@@ -936,14 +925,27 @@ function cleanup() {
   try { fs.rmSync(wikiExtractDir, { recursive: true, force: true }); } catch {}
 }
 process.on("exit", cleanup);
-process.on("SIGINT", () => { appendMeterEvent("session_end", { reason: "SIGINT" }); cleanup(); process.exit(0); });
-process.on("SIGTERM", () => { appendMeterEvent("session_end", { reason: "SIGTERM" }); cleanup(); process.exit(0); });
+let shuttingDown = false;
+async function shutdown(reason) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  await recordMeterEvent("session_end", { reason });
+  await flushMeterQueue();
+  cleanup();
+  process.exit(0);
+}
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
 
 // ── MCP stdio loop ────────────────────────────────────────────────────────────
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 
-rl.on("line", (line) => {
+rl.on("line", async (line) => {
   const trimmed = line.trim();
   if (!trimmed) return;
 
@@ -994,7 +996,7 @@ rl.on("line", (line) => {
       try {
         verifyLeaseForRuntime({ leaseToken: licenseData.leaseToken, publicKeyPem });
       } catch (e) {
-        appendMeterEvent("lease_check_failed", { tool: toolName, error: e.message });
+        await recordMeterEvent("lease_check_failed", { tool: toolName, error: e.message });
         response = err(id, -32603, "lease_expired: " + e.message);
         process.stdout.write(JSON.stringify(response) + "\n");
         return;
@@ -1007,7 +1009,7 @@ rl.on("line", (line) => {
       });
 
       if (policyDecision.decision === "DENY") {
-        appendMeterEvent("tool_denied", {
+        await recordMeterEvent("tool_denied", {
           tool: toolName,
           seatId: runtimeSeatId,
           policyId: policySnapshot?.policyId,
@@ -1023,7 +1025,7 @@ rl.on("line", (line) => {
         return;
       }
 
-      appendMeterEvent("tool_call", {
+      await recordMeterEvent("tool_call", {
         tool: toolName,
         seatId: runtimeSeatId,
         policyId: policySnapshot?.policyId,
@@ -1049,7 +1051,7 @@ rl.on("line", (line) => {
           ? `[POLICY WARNING] ${policyDecision.reasonCodes.join(", ")}`
           : null;
         const text = warningText ? `${warningText}\n${bodyText}` : bodyText;
-        appendMeterEvent("tool_success", { tool: toolName, resultCount: results.length });
+        await recordMeterEvent("tool_success", { tool: toolName, resultCount: results.length });
         response = ok(id, {
           content: [{ type: "text", text }],
           isError: false,
@@ -1077,7 +1079,7 @@ rl.on("line", (line) => {
           ? `[POLICY WARNING] ${policyDecision.reasonCodes.join(", ")}`
           : null;
         const text = warningText ? `${warningText}\n${bodyText}` : bodyText;
-        appendMeterEvent("tool_success", { tool: toolName, page: args.page });
+        await recordMeterEvent("tool_success", { tool: toolName, page: args.page });
         response = ok(id, {
           content: [{ type: "text", text }],
           isError: false,
@@ -1120,14 +1122,14 @@ rl.on("line", (line) => {
             preindexReady: ragMetadata?.preindexReady ?? null,
           },
         };
-        appendMeterEvent("tool_success", { tool: toolName });
+        await recordMeterEvent("tool_success", { tool: toolName });
         response = ok(id, {
           content: [{ type: "text", text: JSON.stringify(runtimeInfo, null, 2) }],
           isError: false,
           metadata: runtimeInfo,
         });
       } else {
-        appendMeterEvent("tool_unknown", { tool: toolName });
+        await recordMeterEvent("tool_unknown", { tool: toolName });
         response = err(id, -32602, "unknown_tool: " + toolName);
       }
     } else if (method === "resources/list") {
@@ -1159,7 +1161,7 @@ rl.on("line", (line) => {
       response = err(id, -32601, "method_not_found");
     }
   } catch (e) {
-    appendMeterEvent("tool_error", { method, error: e.message });
+    await recordMeterEvent("tool_error", { method, error: e.message });
     response = err(id, -32603, e.message ?? "internal_error");
   }
 
@@ -1167,9 +1169,7 @@ rl.on("line", (line) => {
 });
 
 rl.on("close", () => {
-  appendMeterEvent("session_end", { reason: "stdin_closed" });
-  cleanup();
-  process.exit(0);
+  void shutdown("stdin_closed");
 });
 
 process.stderr.write("[skillpack] laws-consultant wiki MCP server ready (lease mode: " + leaseResult.mode + ")\n");

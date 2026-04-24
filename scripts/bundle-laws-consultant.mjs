@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 
 import { generateEd25519KeyPair } from "../packages/crypto/src/index.js";
-import { createLicenseFetchHandler } from "../packages/license-server/src/index.js";
+import { createLicenseFetchHandler } from "../packages/core/src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -91,14 +91,24 @@ const _publicKeyPem = fs.readFileSync(publicKeyFile, "utf8");
 const _licenseFetch = createLicenseFetchHandler({
   signingPrivateKeyPem: _privateKeyPem,
   signingPublicKeyPem: _publicKeyPem,
+  managementApiKey: "local-build-key",
 });
 const _leaseResp = await _licenseFetch(
   new Request("http://local/v1/leases/issue", {
     method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": "local-build-key",
+    },
     body: JSON.stringify({
       customerId: licenseBase.customerId ?? "demo-customer",
       seatId: licenseBase.seatId ?? "default",
       vendorId: licenseBase.bundleId ?? bundleId,
+      providerId: licenseBase.providerId ?? "prov-demo",
+      workspaceId:
+        licenseBase.workspaceId ?? (licenseBase.customerId ?? "demo-customer"),
+      skillId: licenseBase.skillId ?? bundleId,
+      bundleId: licenseBase.bundleVersionId ?? `${bundleId}-${version}`,
       ttlSec: ((licenseBase.policy?.ttlDays ?? 30) * 24 * 60 * 60),
     }),
   })
@@ -180,7 +190,7 @@ fs.writeFileSync(
 
 const args = [
   "run",
-  "packages/cli/src/cli.js",
+  "apps/cli/src/cli.js",
   "bundle",
   "build",
   "--input-dir",
@@ -218,32 +228,36 @@ fs.mkdirSync(releaseSkillDir, { recursive: true });
 fs.copyFileSync(path.join(verticalRoot, "SKILL.md"), path.join(releaseSkillDir, "SKILL.md"));
 
 // Copy the embedded MCP runtime server into the release tarball
-const serverMjsSource = path.join(repoRoot, "packages", "runtime", "src", "server.mjs");
+const runtimeReleaseFiles = [
+  "server.mjs",
+  "server-util.mjs",
+  "wiki-rag-shared.mjs",
+  "runtime-meter.mjs",
+  "local-meter-client.mjs",
+  "meter-store.mjs",
+  "direct-upload-transport.mjs",
+];
+for (const file of runtimeReleaseFiles) {
+  fs.copyFileSync(
+    path.join(repoRoot, "packages", "runtime", "src", file),
+    path.join(releaseRuntimeDir, file)
+  );
+}
 const releaseServerScript = path.join(releaseRuntimeDir, "server.mjs");
-fs.copyFileSync(serverMjsSource, releaseServerScript);
 fs.chmodSync(releaseServerScript, 0o755);
-
-const serverUtilMjsSource = path.join(repoRoot, "packages", "runtime", "src", "server-util.mjs");
 const releaseServerUtilScript = path.join(releaseRuntimeDir, "server-util.mjs");
-fs.copyFileSync(serverUtilMjsSource, releaseServerUtilScript);
 fs.chmodSync(releaseServerUtilScript, 0o755);
-
-const wikiRagSharedSource = path.join(repoRoot, "packages", "runtime", "src", "wiki-rag-shared.mjs");
-const releaseWikiRagSharedScript = path.join(releaseRuntimeDir, "wiki-rag-shared.mjs");
-fs.copyFileSync(wikiRagSharedSource, releaseWikiRagSharedScript);
 
 const bundleSha = sha256Hex(releaseBundleFile);
 const pubKeySha = sha256Hex(releasePublicKeyFile);
-const serverMjsSha = sha256Hex(releaseServerScript);
-const serverUtilMjsSha = sha256Hex(releaseServerUtilScript);
-const wikiRagSharedSha = sha256Hex(releaseWikiRagSharedScript);
+const runtimeReleaseChecksums = runtimeReleaseFiles
+  .map((file) => `${sha256Hex(path.join(releaseRuntimeDir, file))}  runtime/${file}`)
+  .join("\n");
 fs.writeFileSync(
   releaseChecksumsFile,
   `${bundleSha}  ${path.basename(releaseBundleFile)}\n` +
   `${pubKeySha}  ${path.basename(releasePublicKeyFile)}\n` +
-  `${serverMjsSha}  runtime/server.mjs\n` +
-  `${serverUtilMjsSha}  runtime/server-util.mjs\n` +
-  `${wikiRagSharedSha}  runtime/wiki-rag-shared.mjs\n`
+  `${runtimeReleaseChecksums}\n`
 );
 
 const verifyScript = `#!/usr/bin/env node
