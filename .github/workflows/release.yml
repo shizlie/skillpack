@@ -88,6 +88,11 @@ jobs:
           mkdir -p "dist/releases/v${VERSION}/src/skillpack-runtime-${VERSION}"
           cp packages/runtime/src/server.mjs "dist/releases/v${VERSION}/src/skillpack-runtime-${VERSION}/server.mjs"
           cp packages/runtime/src/server-util.mjs "dist/releases/v${VERSION}/src/skillpack-runtime-${VERSION}/server-util.mjs"
+          cp packages/runtime/src/wiki-rag-shared.mjs "dist/releases/v${VERSION}/src/skillpack-runtime-${VERSION}/wiki-rag-shared.mjs"
+          cp packages/runtime/src/runtime-meter.mjs "dist/releases/v${VERSION}/src/skillpack-runtime-${VERSION}/runtime-meter.mjs"
+          cp packages/runtime/src/local-meter-client.mjs "dist/releases/v${VERSION}/src/skillpack-runtime-${VERSION}/local-meter-client.mjs"
+          cp packages/runtime/src/meter-store.mjs "dist/releases/v${VERSION}/src/skillpack-runtime-${VERSION}/meter-store.mjs"
+          cp packages/runtime/src/direct-upload-transport.mjs "dist/releases/v${VERSION}/src/skillpack-runtime-${VERSION}/direct-upload-transport.mjs"
           tar -czf "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-source.tar.gz" \
             -C "dist/releases/v${VERSION}/src" "skillpack-runtime-${VERSION}"
 

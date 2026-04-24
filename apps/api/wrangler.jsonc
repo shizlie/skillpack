@@ -4,13 +4,9 @@
   "compatibility_date": "2026-04-22",
   "compatibility_flags": ["nodejs_compat"],
 
-  // SKILLPACK_MANAGEMENT_API_KEY must be set via:
-  //   wrangler secret put SKILLPACK_MANAGEMENT_API_KEY
-  // Do NOT add it here — [vars] are plaintext and ship the value to production.
-  // For local dev, set it in .dev.vars (gitignored).
-  //
-  // Optional vars:
-  // - SKILLPACK_DASHBOARD_ORIGIN: explicit dashboard origin for CORS responses
+  // Public vars and secrets are resolved from
+  // deploy/hosted-control-plane.manifest.json so the API/dashboard contract
+  // lives in one place.
 
   "d1_databases": [
     {

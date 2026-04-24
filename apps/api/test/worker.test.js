@@ -281,14 +281,50 @@ test("worker: accepts signing keys from *_BASE64 env vars", async () => {
     ),
   };
 
+  const headers = { "content-type": "application/json", "x-api-key": "mgmt-key" };
+
+  await worker.fetch(
+    new Request("http://local/v1/providers", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ providerId: "prov-1", name: "Provider One" }),
+    }),
+    env
+  );
+  await worker.fetch(
+    new Request("http://local/v1/providers/prov-1/customers", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ customerId: "cust-1", name: "Customer One" }),
+    }),
+    env
+  );
+  await worker.fetch(
+    new Request("http://local/v1/workspaces", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        workspaceId: "ws-1",
+        providerId: "prov-1",
+        customerId: "cust-1",
+        name: "Workspace One",
+      }),
+    }),
+    env
+  );
+
   const res = await worker.fetch(
     new Request("http://local/v1/leases/issue", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": "mgmt-key" },
+      headers,
       body: JSON.stringify({
         customerId: "cust-1",
         seatId: "seat-1",
         vendorId: "laws-consultant",
+        providerId: "prov-1",
+        workspaceId: "ws-1",
+        skillId: "laws-consultant",
+        bundleId: "laws-consultant-1.0.0",
       }),
     }),
     env
@@ -342,5 +378,136 @@ test("worker: api responses include cors headers and root stays backend-only", a
 
   const rootRes = await worker.fetch(new Request("http://local/"), env);
   expect(rootRes.status).toBe(404);
+  env.DB.close();
+});
+
+test("worker: meter upload with x-skillpack-lease-token ignores client context and uses lease context", async () => {
+  const keys = generateEd25519KeyPair();
+  const env = {
+    DB: createTestD1Database(),
+    SKILLPACK_MANAGEMENT_API_KEY: "mgmt-key",
+    SKILLPACK_SIGNING_PRIVATE_KEY_PEM: keys.privateKeyPem,
+    SKILLPACK_SIGNING_PUBLIC_KEY_PEM: keys.publicKeyPem,
+    SKILLPACK_DASHBOARD_ORIGIN: "https://dashboard.skillpack.example",
+  };
+  const headers = { "content-type": "application/json", "x-api-key": "mgmt-key" };
+
+  await worker.fetch(
+    new Request("http://local/v1/providers", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ providerId: "prov-1", name: "Provider One" }),
+    }),
+    env
+  );
+  await worker.fetch(
+    new Request("http://local/v1/providers/prov-1/customers", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ customerId: "cust-1", name: "Customer One" }),
+    }),
+    env
+  );
+  await worker.fetch(
+    new Request("http://local/v1/workspaces", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        workspaceId: "ws-1",
+        providerId: "prov-1",
+        customerId: "cust-1",
+        name: "Workspace One",
+      }),
+    }),
+    env
+  );
+
+  const leaseIssue = await worker.fetch(
+    new Request("http://local/v1/leases/issue", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        customerId: "cust-1",
+        seatId: "seat-1",
+        providerId: "prov-1",
+        workspaceId: "ws-1",
+        skillId: "laws-consultant",
+        bundleId: "laws-consultant-1.0.0",
+      }),
+    }),
+    env
+  );
+  expect(leaseIssue.status).toBe(200);
+  const { leaseToken } = await leaseIssue.json();
+
+  const preflightRes = await worker.fetch(
+    new Request("http://local/v1/meter/upload", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://dashboard.skillpack.example",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type,x-skillpack-lease-token",
+      },
+    }),
+    env
+  );
+  expect(preflightRes.status).toBe(204);
+  expect(preflightRes.headers.get("access-control-allow-headers")).toContain(
+    "x-skillpack-lease-token"
+  );
+
+  const upload = await worker.fetch(
+    new Request("http://local/v1/meter/upload", {
+      method: "POST",
+      headers: {
+        origin: "https://dashboard.skillpack.example",
+        "content-type": "application/json",
+        "x-skillpack-lease-token": leaseToken,
+      },
+      body: JSON.stringify({
+        events: [
+          {
+            prevHash: "GENESIS",
+            seq: 0,
+            at: 1_800_000_100,
+            kind: "tool_call",
+            seatId: "seat-1",
+            tool: "wiki_search",
+            usage: { unit: "tool_call", delta: 2 },
+            providerId: "forged-provider",
+            customerId: "forged-customer",
+            workspaceId: "forged-workspace",
+          },
+        ],
+      }),
+    }),
+    env
+  );
+  expect(upload.status).toBe(200);
+  expect((await upload.json()).mode).toBe("direct");
+
+  const summaryRes = await worker.fetch(
+    new Request("http://local/v1/usage/summary?workspaceId=ws-1", {
+      method: "GET",
+      headers: { "x-api-key": "mgmt-key" },
+    }),
+    env
+  );
+  expect(summaryRes.status).toBe(200);
+  expect((await summaryRes.json()).summary).toEqual([
+    {
+      providerId: "prov-1",
+      customerId: "cust-1",
+      workspaceId: "ws-1",
+      seatId: "seat-1",
+      skillId: "laws-consultant",
+      bundleId: "laws-consultant-1.0.0",
+      leaseJti: expect.any(String),
+      tool: "wiki_search",
+      unit: "tool_call",
+      totalCalls: 2,
+    },
+  ]);
+
   env.DB.close();
 });

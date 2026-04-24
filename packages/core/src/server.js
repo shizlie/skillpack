@@ -8,6 +8,8 @@ import {
 import {
   validateAcceptedUsageSummaryRow,
   validateCustomerCreateContract,
+  validateDirectLeaseCommercialContext,
+  validateDirectMeterUploadContract,
   validateLeasePayload,
   validateMeterUploadContract,
   validatePolicySnapshot,
@@ -54,6 +56,41 @@ function readApiKey(request) {
   return request.headers.get("x-api-key") ?? request.headers.get("X-Api-Key");
 }
 
+function isValidManagementKey(request, managementApiKey) {
+  const providedApiKey = readApiKey(request);
+  if (
+    typeof providedApiKey !== "string" ||
+    typeof managementApiKey !== "string" ||
+    providedApiKey.length !== managementApiKey.length
+  ) {
+    return false;
+  }
+  const hashKey = (key) => crypto.createHash("sha256").update(key).digest();
+  return crypto.timingSafeEqual(hashKey(providedApiKey), hashKey(managementApiKey));
+}
+
+function authenticateDirectMeterUpload(request, signingPublicKeyPem, nowSec) {
+  const leaseToken = request.headers.get("x-skillpack-lease-token");
+  if (typeof leaseToken !== "string" || leaseToken.length === 0) {
+    return null;
+  }
+  return verifyLeaseToken(leaseToken, signingPublicKeyPem, { nowSec });
+}
+
+function buildMeterUploadAck(events) {
+  let seqStart = null;
+  let seqEnd = null;
+  for (const event of events) {
+    if (!Number.isInteger(event.eventSeq)) continue;
+    if (seqStart === null || event.eventSeq < seqStart) seqStart = event.eventSeq;
+    if (seqEnd === null || event.eventSeq > seqEnd) seqEnd = event.eventSeq;
+  }
+  return {
+    count: events.length,
+    range: seqStart === null ? null : { seqStart, seqEnd },
+  };
+}
+
 function getProviderIdForCustomerRoute(pathname) {
   const match = /^\/v1\/providers\/([^/]+)\/customers$/.exec(pathname);
   if (!match) return null;
@@ -78,12 +115,15 @@ function isManagementRoute(request, pathname) {
   if (request.method === "POST" && pathname === "/v1/leases/issue") return true;
   if (request.method === "POST" && pathname === "/v1/policies/issue") return true;
   if (request.method === "POST" && pathname === "/v1/policies/sync") return true;
-  if (request.method === "POST" && pathname === "/v1/meter/upload") return true;
   if (request.method === "GET" && pathname === "/v1/usage/summary") return true;
   if (request.method === "POST" && pathname === "/v1/tsa/manual-attest") return true;
   if (request.method === "GET" && pathname === "/v1/tsa/manual-attestations") return true;
   if (request.method === "GET" && pathname === "/v1/tsa/manual-attestations/latest") return true;
   return false;
+}
+
+function hasDirectLeaseCommercialField(body, key) {
+  return body[key] !== undefined && body[key] !== null;
 }
 
 export function createLicenseFetchHandler({
@@ -106,12 +146,7 @@ export function createLicenseFetchHandler({
       if (!managementApiKey) {
         return json({ error: "management_api_key_not_configured" }, 503);
       }
-      const providedApiKey = readApiKey(request);
-      const hashKey = (k) => crypto.createHash("sha256").update(k).digest();
-      const keyValid =
-        typeof providedApiKey === "string" &&
-        crypto.timingSafeEqual(hashKey(providedApiKey), hashKey(managementApiKey));
-      if (!keyValid) {
+      if (!isValidManagementKey(request, managementApiKey)) {
         return json({ error: "unauthorized" }, 401);
       }
     }
@@ -223,8 +258,20 @@ export function createLicenseFetchHandler({
           exp: iat + ttlSec,
           jti: crypto.randomUUID(),
           leaseCounter: nextCounter,
+          providerId: body.providerId,
+          workspaceId: body.workspaceId,
+          skillId: body.skillId,
+          bundleId: body.bundleId,
         };
         validateLeasePayload(payload);
+        const hasDirectCommercialContext =
+          hasDirectLeaseCommercialField(body, "providerId") ||
+          hasDirectLeaseCommercialField(body, "workspaceId") ||
+          hasDirectLeaseCommercialField(body, "skillId") ||
+          hasDirectLeaseCommercialField(body, "bundleId");
+        if (hasDirectCommercialContext) {
+          validateDirectLeaseCommercialContext(payload);
+        }
         const leaseToken = createLeaseToken(payload, signingPrivateKeyPem);
         await leaseStore.updateLatestLeaseCounter(customerId, seatId, nextCounter);
 
@@ -312,28 +359,53 @@ export function createLicenseFetchHandler({
 
     if (request.method === "POST" && url.pathname === "/v1/meter/upload") {
       let validated;
+      let mode = "management";
+      let body;
       try {
-        const body = await readBody(request);
-        validated = validateMeterUploadContract(body);
+        body = await readBody(request);
       } catch (error) {
         return json({ accepted: false, error: error.message }, 400);
       }
+
+      let directLease;
+      try {
+        directLease = authenticateDirectMeterUpload(request, signingPublicKeyPem, nowSec);
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 401);
+      }
+
+      try {
+        if (directLease) {
+          mode = "direct";
+          validated = validateDirectMeterUploadContract(body, {
+            providerId: directLease.providerId,
+            customerId: directLease.sub,
+            workspaceId: directLease.workspaceId,
+            seatId: directLease.seatId ?? "default",
+            skillId: directLease.skillId,
+            bundleId: directLease.bundleId,
+            leaseJti: directLease.jti,
+          });
+        } else {
+          if (!managementApiKey) {
+            return json({ error: "management_api_key_not_configured" }, 503);
+          }
+          if (!isValidManagementKey(request, managementApiKey)) {
+            return json({ error: "unauthorized" }, 401);
+          }
+          validated = validateMeterUploadContract(body);
+        }
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 400);
+      }
+
       try {
         const appendMeterEvents = getStoreMethod(leaseStore, "appendMeterEvents");
         await appendMeterEvents(validated.events);
-        let seqStart = null;
-        let seqEnd = null;
-        for (const event of validated.events) {
-          if (!Number.isInteger(event.eventSeq)) continue;
-          if (seqStart === null || event.eventSeq < seqStart) seqStart = event.eventSeq;
-          if (seqEnd === null || event.eventSeq > seqEnd) seqEnd = event.eventSeq;
-        }
         return json({
           accepted: true,
-          ack: {
-            count: validated.events.length,
-            range: seqStart === null ? null : { seqStart, seqEnd },
-          },
+          mode,
+          ack: buildMeterUploadAck(validated.events),
         });
       } catch (error) {
         // Storage failure — idempotent, safe to retry the full upload file

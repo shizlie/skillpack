@@ -1,5 +1,4 @@
 import {
-  chainMeterEvent,
   leaseTokenInternals,
   verifyDetached,
 } from "@skillpack/crypto";
@@ -8,6 +7,7 @@ import {
   validateLeasePayload,
   validateManualTimeAttestation,
 } from "@skillpack/protocol";
+export { createRuntimeMeter } from "./runtime-meter.mjs";
 
 const DEFAULT_GRACE_SEC = 72 * 60 * 60;
 const DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC = 24 * 60 * 60;
@@ -95,30 +95,6 @@ export function verifyLeaseForRuntime({
   }
 
   return { mode, payload, tsa: { ...tsaState, manualAttestationUsed } };
-}
-
-export function createRuntimeMeter({
-  chainKey,
-  startSeq = 0,
-  startPrevHash = leaseTokenInternals.GENESIS_HASH,
-}) {
-  const events = [];
-  let seq = startSeq;
-  let prevHash = startPrevHash;
-
-  function append(kind, data = {}, at = Math.floor(Date.now() / 1000)) {
-    const event = chainMeterEvent({ prevHash, seq, at, kind, data }, chainKey);
-    events.push(event);
-    prevHash = event.hash;
-    seq += 1;
-    return event;
-  }
-
-  return {
-    append,
-    getEvents: () => [...events],
-    state: () => ({ seq, prevHash }),
-  };
 }
 
 export async function executeWithRuntimeLease({

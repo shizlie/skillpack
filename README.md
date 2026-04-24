@@ -158,7 +158,7 @@ CLI source bundle:
 tar -xzf skillpack-cli-<version>-source.tar.gz
 cd skillpack-cli-<version>
 bun install --frozen-lockfile
-bun packages/cli/src/cli.js --help
+bun apps/cli/src/cli.js --help
 ```
 
 Runtime source bundle:
@@ -189,7 +189,8 @@ Runbook: `docs/runbooks/policy-loop-demo.md`
 
 ## Cloudflare Worker + D1 deploy (implemented)
 
-New package: `packages/license-server-worker` (Hono + D1).
+Hosted control plane deployables now live in `apps/api` and `apps/dashboard`.
+Their public wiring is resolved from `deploy/hosted-control-plane.manifest.json`.
 
 Quick path:
 
@@ -199,12 +200,13 @@ Quick path:
 ./scripts/demo-cloudflare-local-e2e.sh
 ```
 
-2. Configure D1 + secrets via `wrangler` in `packages/license-server-worker/`
-3. Deploy worker
+2. Configure D1, public origins, and secrets for the hosted pair
+3. Deploy the hosted control plane
 4. Run deployed end-to-end smoke:
 
 ```bash
-SERVER_URL="https://<worker>.workers.dev" \
+API_BASE_URL="https://<api-worker>.workers.dev" \
+DASHBOARD_BASE_URL="https://<dashboard-worker>.workers.dev" \
 API_KEY="<management-key>" \
 ./scripts/demo-cloudflare-e2e.sh
 ```
@@ -216,6 +218,12 @@ Continuous meter sync helper:
 ```
 
 Full runbook: `docs/runbooks/cloudflare-d1-deploy.md`
+
+Direct-mode hosted verification is now supported:
+
+- the bundle runtime still writes local `meter.jsonl`
+- when `SKILLPACK_SYNC_MODE=direct` and `SKILLPACK_CONTROL_PLANE_URL` are set, the bundle-local meter client uploads usage directly to `/v1/meter/upload`
+- the server derives accepted usage identity from the signed lease context, not from client-supplied commercial IDs
 
 ## Policy loop demo (implemented)
 

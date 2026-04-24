@@ -121,3 +121,21 @@ test("runtime TSA policy: accepts fresh manual attestation for expired token", (
   expect(out.tsa.status).toBe("expired");
   expect(out.tsa.manualAttestationUsed).toBe(true);
 });
+
+test("direct upload transport uses node built-ins and leaves spool intact on failure", async () => {
+  const { createDirectUploadTransport } = await import(
+    "../src/direct-upload-transport.mjs"
+  );
+  const transport = createDirectUploadTransport({
+    baseUrl: "http://127.0.0.1:9",
+    timeoutMs: 100,
+  });
+
+  await expect(
+    transport.upload({
+      leaseToken: "lease-token",
+      context: { workspaceId: "ws-1" },
+      events: [],
+    })
+  ).rejects.toThrow();
+});

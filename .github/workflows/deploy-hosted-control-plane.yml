@@ -1,0 +1,31 @@
+name: Deploy Hosted Control Plane
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      API_BASE_URL: ${{ vars.SKILLPACK_API_BASE_URL }}
+      DASHBOARD_ORIGIN: ${{ vars.SKILLPACK_DASHBOARD_ORIGIN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SMOKE_MANAGEMENT_API_KEY: ${{ secrets.SKILLPACK_MANAGEMENT_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - run: bun test apps/api/test/worker.test.js apps/dashboard/test/worker.test.js
+      - run: >
+          bun scripts/deploy/deploy-hosted-control-plane.mjs
+          "{\"apiPublicBaseUrl\":\"${API_BASE_URL}\",\"dashboardPublicOrigin\":\"${DASHBOARD_ORIGIN}\"}"
+      - run: >
+          bun scripts/deploy/smoke-hosted-control-plane.mjs
+          --api-base-url=${API_BASE_URL}
+          --dashboard-base-url=${DASHBOARD_ORIGIN}
+          --management-api-key=${SMOKE_MANAGEMENT_API_KEY}

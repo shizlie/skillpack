@@ -3,6 +3,8 @@ import { expect, test } from "bun:test";
 import {
   validateCustomerCreateContract,
   validateAcceptedUsageSummaryRow,
+  validateDirectLeaseCommercialContext,
+  validateDirectMeterUploadContract,
   validateMeterUploadContract,
   validateProviderCreateContract,
   validateWorkspaceCreateContract,
@@ -177,6 +179,74 @@ test("eventId includes leaseJti to prevent PK collision across lease renewals", 
   const leaseA = validateMeterUploadContract({ ...base, context: { leaseJti: "jti-a" } });
   const leaseB = validateMeterUploadContract({ ...base, context: { leaseJti: "jti-b" } });
   expect(leaseA.events[0].eventId).not.toBe(leaseB.events[0].eventId);
+});
+
+test("validateDirectLeaseCommercialContext requires lease-bound commercial ids", () => {
+  expect(() =>
+    validateDirectLeaseCommercialContext({
+      iss: "skillpack-vendor",
+      sub: "cust-1",
+      iat: 1_800_000_000,
+      exp: 1_800_003_600,
+      jti: "lease-jti-1",
+      leaseCounter: 0,
+      providerId: "prov-1",
+      workspaceId: "ws-1",
+      skillId: "laws-consultant",
+      bundleId: "laws-consultant-1.0.0",
+    })
+  ).not.toThrow();
+
+  expect(() =>
+    validateDirectLeaseCommercialContext({
+      providerId: "prov-1",
+      workspaceId: "ws-1",
+      skillId: "laws-consultant",
+    })
+  ).toThrow(/lease_payload_missing_bundleId/);
+});
+
+test("direct meter upload uses accepted lease context instead of client-supplied commercial ids", () => {
+  const accepted = validateDirectMeterUploadContract(
+    {
+      events: [
+        {
+          prevHash: "GENESIS",
+          seq: 0,
+          at: 1_800_000_100,
+          kind: "tool_call",
+          seatId: "seat-1",
+          tool: "wiki_search",
+          usage: { unit: "tool_call", delta: 1 },
+          providerId: "client-prov",
+          customerId: "client-cust",
+          workspaceId: "client-forged-ws",
+          skillId: "client-skill",
+          bundleId: "client-bundle",
+          leaseJti: "client-jti",
+        },
+      ],
+    },
+    {
+      providerId: "prov-1",
+      customerId: "cust-1",
+      workspaceId: "ws-1",
+      skillId: "laws-consultant",
+      bundleId: "laws-consultant-1.0.0",
+      leaseJti: "lease-jti-1",
+      seatId: "seat-1",
+    }
+  );
+
+  expect(accepted.workspaceId).toBe("ws-1");
+  expect(accepted.events[0]).toMatchObject({
+    providerId: "prov-1",
+    customerId: "cust-1",
+    workspaceId: "ws-1",
+    skillId: "laws-consultant",
+    bundleId: "laws-consultant-1.0.0",
+    leaseJti: "lease-jti-1",
+  });
 });
 
 test("validateAcceptedUsageSummaryRow validates commercial dimensions", () => {
