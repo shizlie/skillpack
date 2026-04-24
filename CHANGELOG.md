@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [0.5.0.1] - 2026-04-24
+
+### Added
+
+- Hosted control-plane deploy manifest (`deploy/hosted-control-plane.manifest.json`) plus deploy and smoke helpers for the real two-worker layout: `apps/api` and `apps/dashboard`.
+- Bundle-local runtime meter helper modules (`runtime-meter`, `meter-store`, `local-meter-client`, `direct-upload-transport`) with focused tests and release/source artifact coverage.
+- Local Cloudflare worker-pair smoke coverage for direct-mode metering, including lease issue, policy issue, runtime tool execution, and usage summary verification without manual `meter upload`.
+
+### Changed
+
+- Hosted deploy wiring is now manifest-driven so API/dashboard public bindings stay aligned across CI, local smoke, and production deployment.
+- Runtime direct-mode metering now writes to the local spool first and flushes in the background with batched retry behavior, so control-plane latency does not block normal tool usage.
+- Hosted deploy docs and runbooks now describe the actual `apps/api` + `apps/dashboard` layout, required production bindings, and direct-mode verification flow.
+- Release packaging now includes the extracted runtime meter helper modules inside the runtime source artifact.
+
+### Fixed
+
+- `POST /v1/leases/issue` once again supports legacy callers while still enforcing the full commercial context for direct-mode leases.
+- `POST /v1/meter/upload` now derives accepted commercial identity from the signed lease token (`x-skillpack-lease-token`) instead of trusting client-supplied upload context.
+- Hosted smoke checks now fail fast when dashboard auth/config bindings are missing, reducing config drift between local `.dev.vars` and production.
+
 ## [0.5.0.0] - 2026-04-22
 
 ### Added
