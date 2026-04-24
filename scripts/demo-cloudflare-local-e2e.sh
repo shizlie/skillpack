@@ -11,7 +11,7 @@ API_INSPECTOR_PORT="${API_INSPECTOR_PORT:-9329}"
 DASHBOARD_INSPECTOR_PORT="${DASHBOARD_INSPECTOR_PORT:-9330}"
 API_URL="${API_URL:-http://$HOST:$API_PORT}"
 DASHBOARD_URL="${DASHBOARD_URL:-http://$HOST:$DASHBOARD_PORT}"
-API_KEY="${API_KEY:-dev-management-key}"
+API_KEY="${API_KEY:-dev-api-key}"
 API_LOG_FILE="${API_LOG_FILE:-$ROOT_DIR/.context/cloudflare-api-local.log}"
 DASHBOARD_LOG_FILE="${DASHBOARD_LOG_FILE:-$ROOT_DIR/.context/cloudflare-dashboard-local.log}"
 API_DIR="$ROOT_DIR/apps/api"
@@ -30,7 +30,7 @@ PRIVATE_KEY_B64="$(base64 < "$PRIVATE_KEY_PATH" | tr -d '\n')"
 PUBLIC_KEY_B64="$(base64 < "$PUBLIC_KEY_PATH" | tr -d '\n')"
 
 cat > "$API_DIR/.dev.vars" <<EOF
-SKILLPACK_MANAGEMENT_API_KEY=$API_KEY
+SKILLPACK_API_KEY=$API_KEY
 SKILLPACK_SIGNING_PRIVATE_KEY_PEM_BASE64=$PRIVATE_KEY_B64
 SKILLPACK_SIGNING_PUBLIC_KEY_PEM_BASE64=$PUBLIC_KEY_B64
 SKILLPACK_DASHBOARD_ORIGIN=$DASHBOARD_URL
@@ -39,7 +39,7 @@ EOF
 cat > "$DASHBOARD_DIR/.dev.vars" <<EOF
 SKILLPACK_API_BASE_URL=$API_URL
 SKILLPACK_DASHBOARD_ORIGIN=$DASHBOARD_URL
-SKILLPACK_API_MANAGEMENT_KEY=$API_KEY
+SKILLPACK_API_KEY=$API_KEY
 CLERK_PUBLISHABLE_KEY=pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk
 CLERK_SECRET_KEY=sk_test_local_placeholder
 EOF
@@ -78,7 +78,7 @@ for _ in $(seq 1 60); do
   if bun scripts/deploy/smoke-hosted-control-plane.mjs \
     --api-base-url="$API_URL" \
     --dashboard-base-url="$DASHBOARD_URL" \
-    --management-api-key="$API_KEY" >/dev/null 2>&1; then
+    --api-key="$API_KEY" >/dev/null 2>&1; then
     READY=1
     break
   fi

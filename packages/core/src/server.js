@@ -490,7 +490,7 @@ export function startLicenseServer(options) {
   const leaseStore = options?.leaseStore ?? createInMemoryLeaseStore();
   const managementApiKey =
     options?.managementApiKey ??
-    process.env.SKILLPACK_MANAGEMENT_API_KEY ??
+    process.env.SKILLPACK_API_KEY ??
     null;
   if (!options?.leaseStore && storageMode === "sqlite") {
     throw new Error("license_server_sqlite_store_not_injected");

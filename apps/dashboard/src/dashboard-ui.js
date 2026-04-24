@@ -22,7 +22,7 @@ export function renderDashboardHtml() {
       <header class="hero">
         <div class="hero__copy">
           <p class="eyebrow">skillpack dashboard worker</p>
-          <h1>Clerk signs the operator in. The browser never sees the backend key.</h1>
+          <h1>Clerk signs the operator in. API calls stay server-side.</h1>
           <p class="hero__lede">
             The dashboard is now a separate worker with its own auth boundary. It uses Clerk for the
             operator session and proxies backend calls server-side only when needed.
@@ -30,7 +30,7 @@ export function renderDashboardHtml() {
           <div class="hero__chips">
             <span>Separate frontend worker</span>
             <span>Protected proxy to backend</span>
-            <span>Management key stays server-side</span>
+            <span>API key stays server-side</span>
           </div>
         </div>
 
@@ -46,7 +46,7 @@ export function renderDashboardHtml() {
           <div id="auth-root" class="auth-root"></div>
           <p class="hint">
             If Clerk is not configured, the dashboard will stay locked instead of falling back to a
-            browser-visible management key.
+            browser-visible API key.
           </p>
         </aside>
       </header>

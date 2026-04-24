@@ -7,7 +7,7 @@ test("dashboard worker: serves shell and config", async () => {
   expect(shellRes.status).toBe(200);
   expect(shellRes.headers.get("content-type")).toContain("text/html");
   expect(await shellRes.text()).toContain(
-    "Clerk signs the operator in. The browser never sees the backend key."
+    "Clerk signs the operator in. API calls stay server-side."
   );
 
   const configRes = await worker.fetch(new Request("http://local/app-config"), {
@@ -20,7 +20,6 @@ test("dashboard worker: serves shell and config", async () => {
     apiProxyBase: "/api",
     authMode: "clerk",
     apiBaseUrlConfigured: false,
-    apiManagementConfigured: false,
     clerkBackendConfigured: false,
     clerkPublishableKey:
       "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
@@ -55,7 +54,7 @@ test("dashboard worker: proxy rejects unauthenticated requests", async () => {
         "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
       CLERK_SECRET_KEY: "sk_test_dummy_secret_key",
       SKILLPACK_API_BASE_URL: "https://api.skillpack.example",
-      SKILLPACK_API_MANAGEMENT_KEY: "backend-mgmt-key",
+      SKILLPACK_API_KEY: "backend-api-key",
       SKILLPACK_DASHBOARD_ORIGIN: "http://local",
     }
   );

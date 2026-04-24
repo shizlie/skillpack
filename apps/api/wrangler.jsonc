@@ -1,20 +1,20 @@
 {
-  "name": "skillpack-api",
-  "main": "src/index.js",
-  "compatibility_date": "2026-04-22",
-  "compatibility_flags": ["nodejs_compat"],
+    "name": "skillpack-api",
+    "main": "src/index.js",
+    "compatibility_date": "2026-04-22",
+    "compatibility_flags": ["nodejs_compat"],
 
-  // Public vars and secrets are resolved from
-  // deploy/hosted-control-plane.manifest.json so the API/dashboard contract
-  // lives in one place.
+    // Public vars and secrets are resolved from
+    // deploy/hosted-control-plane.manifest.json so the API/dashboard contract
+    // lives in one place.
 
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "skillpack-license",
-      // Replace with your D1 database ID after running: wrangler d1 create skillpack-license
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
-      "migrations_dir": "migrations"
-    }
-  ]
+    "d1_databases": [
+        {
+            "binding": "DB",
+            "database_name": "skillpack-db",
+            // Replace with your D1 database ID after running: wrangler d1 create skillpack-license
+            "database_id": "11c4dfc1-c455-4635-8ad5-0dd1195858a3",
+            "migrations_dir": "migrations"
+        }
+    ]
 }

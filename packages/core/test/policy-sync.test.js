@@ -32,13 +32,13 @@ function makePolicy({ policyId, workspaceId = "ws-1", workspaceMode = "ENABLED" 
 
 test("policy issue + sync + not_modified + meter upload + usage summary + disable propagation", async () => {
   const keys = generateEd25519KeyPair();
-  const managementApiKey = "test-management-key";
+  const apiKey = "test-api-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey,
+    managementApiKey: apiKey,
   });
-  const headers = { "x-api-key": managementApiKey };
+  const headers = { "x-api-key": apiKey };
 
   const policyV1 = makePolicy({ policyId: "pol-1", workspaceMode: "ENABLED" });
   const issueV1 = await fetch(

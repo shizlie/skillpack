@@ -173,11 +173,11 @@ test("cli: tsa manual-attest posts to server and latest-attestation reads record
 
 test("cli: policy issue posts policy snapshot", async () => {
   const keys = generateEd25519KeyPair();
-  const managementApiKey = "test-management-key";
+  const apiKey = "test-api-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey,
+    managementApiKey: apiKey,
   });
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "skillpack-policy-issue-test-"));
   const policyFile = path.join(workspace, "policy.json");
@@ -191,7 +191,7 @@ test("cli: policy issue posts policy snapshot", async () => {
       "--server-url",
       "http://local",
       "--api-key",
-      managementApiKey,
+      apiKey,
       "--policy-file",
       policyFile,
     ],
@@ -206,16 +206,16 @@ test("cli: policy issue posts policy snapshot", async () => {
 
 test("cli: policy sync returns latest policy", async () => {
   const keys = generateEd25519KeyPair();
-  const managementApiKey = "test-management-key";
+  const apiKey = "test-api-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey,
+    managementApiKey: apiKey,
   });
   await fetch(
     new Request("http://local/v1/policies/issue", {
       method: "POST",
-      headers: { "x-api-key": managementApiKey },
+      headers: { "x-api-key": apiKey },
       body: JSON.stringify({ policy: makePolicy("pol-2", "DISABLED") }),
     })
   );
@@ -228,7 +228,7 @@ test("cli: policy sync returns latest policy", async () => {
       "--server-url",
       "http://local",
       "--api-key",
-      managementApiKey,
+      apiKey,
       "--workspace-id",
       "ws-1",
       "--policy-id",
@@ -246,11 +246,11 @@ test("cli: policy sync returns latest policy", async () => {
 
 test("cli: provider/customer/workspace create", async () => {
   const keys = generateEd25519KeyPair();
-  const managementApiKey = "test-management-key";
+  const apiKey = "test-api-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey,
+    managementApiKey: apiKey,
   });
 
   const providerSink = makeIo();
@@ -261,7 +261,7 @@ test("cli: provider/customer/workspace create", async () => {
       "--server-url",
       "http://local",
       "--api-key",
-      managementApiKey,
+      apiKey,
       "--provider-id",
       "prov-1",
       "--name",
@@ -281,7 +281,7 @@ test("cli: provider/customer/workspace create", async () => {
       "--server-url",
       "http://local",
       "--api-key",
-      managementApiKey,
+      apiKey,
       "--provider-id",
       "prov-1",
       "--customer-id",
@@ -303,7 +303,7 @@ test("cli: provider/customer/workspace create", async () => {
       "--server-url",
       "http://local",
       "--api-key",
-      managementApiKey,
+      apiKey,
       "--workspace-id",
       "ws-1",
       "--provider-id",
@@ -324,11 +324,11 @@ test("cli: provider/customer/workspace create", async () => {
 
 test("cli: meter upload ingests events from jsonl", async () => {
   const keys = generateEd25519KeyPair();
-  const managementApiKey = "test-management-key";
+  const apiKey = "test-api-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey,
+    managementApiKey: apiKey,
   });
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "skillpack-meter-upload-test-"));
   const eventsFile = path.join(workspace, "meter.jsonl");
@@ -365,7 +365,7 @@ test("cli: meter upload ingests events from jsonl", async () => {
       "--server-url",
       "http://local",
       "--api-key",
-      managementApiKey,
+      apiKey,
       "--workspace-id",
       "ws-1",
       "--file",
@@ -384,16 +384,16 @@ test("cli: meter upload ingests events from jsonl", async () => {
 
 test("cli: usage summary prints totals", async () => {
   const keys = generateEd25519KeyPair();
-  const managementApiKey = "test-management-key";
+  const apiKey = "test-api-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey,
+    managementApiKey: apiKey,
   });
   await fetch(
     new Request("http://local/v1/meter/upload", {
       method: "POST",
-      headers: { "x-api-key": managementApiKey },
+      headers: { "x-api-key": apiKey },
       body: JSON.stringify({
         workspaceId: "ws-1",
         context: {
@@ -435,7 +435,7 @@ test("cli: usage summary prints totals", async () => {
       "--server-url",
       "http://local",
       "--api-key",
-      managementApiKey,
+      apiKey,
       "--workspace-id",
       "ws-1",
     ],
@@ -522,11 +522,11 @@ test("cli: provider create returns 401 when api key missing", async () => {
 
 test("cli: customer create returns 400 for unknown provider", async () => {
   const keys = generateEd25519KeyPair();
-  const managementApiKey = "test-management-key";
+  const apiKey = "test-api-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey,
+    managementApiKey: apiKey,
   });
 
   const sink = makeIo();
@@ -534,7 +534,7 @@ test("cli: customer create returns 400 for unknown provider", async () => {
     [
       "customer", "create",
       "--server-url", "http://local",
-      "--api-key", managementApiKey,
+      "--api-key", apiKey,
       "--provider-id", "nonexistent-provider",
       "--customer-id", "cust-1",
     ],
@@ -548,17 +548,17 @@ test("cli: customer create returns 400 for unknown provider", async () => {
 
 test("cli: workspace create returns 400 for unknown customer", async () => {
   const keys = generateEd25519KeyPair();
-  const managementApiKey = "test-management-key";
+  const apiKey = "test-api-key";
   const fetch = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey,
+    managementApiKey: apiKey,
   });
 
   await fetch(
     new Request("http://local/v1/providers", {
       method: "POST",
-      headers: { "x-api-key": managementApiKey },
+      headers: { "x-api-key": apiKey },
       body: JSON.stringify({ providerId: "prov-neg", name: "Neg Provider" }),
     })
   );
@@ -568,7 +568,7 @@ test("cli: workspace create returns 400 for unknown customer", async () => {
     [
       "workspace", "create",
       "--server-url", "http://local",
-      "--api-key", managementApiKey,
+      "--api-key", apiKey,
       "--workspace-id", "ws-neg",
       "--provider-id", "prov-neg",
       "--customer-id", "nonexistent-customer",

@@ -42,7 +42,7 @@ function getFetchHandler(env) {
   const handler = createLicenseFetchHandler({
     signingPrivateKeyPem: getPemFromEnv(env, "SKILLPACK_SIGNING_PRIVATE_KEY_PEM"),
     signingPublicKeyPem: getPemFromEnv(env, "SKILLPACK_SIGNING_PUBLIC_KEY_PEM"),
-    managementApiKey: getEnvString(env, "SKILLPACK_MANAGEMENT_API_KEY"),
+    managementApiKey: getEnvString(env, "SKILLPACK_API_KEY"),
     leaseStore: createD1LeaseStore({ db }),
   });
 

@@ -13,7 +13,7 @@ CUSTOMER_ID="${CUSTOMER_ID:-demo-customer}"
 SKILL_ID="${SKILL_ID:-laws-consultant}"
 
 if [ -z "$API_BASE_URL" ] || [ -z "$API_KEY" ]; then
-  echo "usage: API_BASE_URL=https://<api-worker-url> API_KEY=<management-key> [DASHBOARD_BASE_URL=https://<dashboard-worker-url>] ./scripts/demo-cloudflare-e2e.sh"
+  echo "usage: API_BASE_URL=https://<api-worker-url> API_KEY=<hosted-api-key> [DASHBOARD_BASE_URL=https://<dashboard-worker-url>] ./scripts/demo-cloudflare-e2e.sh"
   exit 1
 fi
 
@@ -38,7 +38,7 @@ if [ -n "$DASHBOARD_BASE_URL" ]; then
   bun scripts/deploy/smoke-hosted-control-plane.mjs \
     --api-base-url="$API_BASE_URL" \
     --dashboard-base-url="$DASHBOARD_BASE_URL" \
-    --management-api-key="$API_KEY" >/dev/null
+    --api-key="$API_KEY" >/dev/null
   STEP=$((STEP + 1))
 fi
 

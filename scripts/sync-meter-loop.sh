@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SERVER_URL="${SERVER_URL:-http://localhost:3001}"
-API_KEY="${API_KEY:-dev-management-key}"
+API_KEY="${API_KEY:-dev-api-key}"
 WORKSPACE_ID="${WORKSPACE_ID:-demo-customer}"
 METER_FILE="${METER_FILE:-$HOME/.skillpack/bundles/laws-consultant/meter.jsonl}"
 PROVIDER_ID="${PROVIDER_ID:-prov-demo}"

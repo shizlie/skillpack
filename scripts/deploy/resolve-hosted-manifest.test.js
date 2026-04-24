@@ -17,7 +17,7 @@ describe("resolveHostedManifest", () => {
             SKILLPACK_DASHBOARD_ORIGIN: { fromInput: "dashboardPublicOrigin" },
           },
           secrets: [
-            "SKILLPACK_MANAGEMENT_API_KEY",
+            "SKILLPACK_API_KEY",
             "SKILLPACK_SIGNING_PRIVATE_KEY_PEM",
             "SKILLPACK_SIGNING_PUBLIC_KEY_PEM",
           ],
@@ -30,7 +30,7 @@ describe("resolveHostedManifest", () => {
             SKILLPACK_DASHBOARD_ORIGIN: { fromInput: "dashboardPublicOrigin" },
           },
           secrets: [
-            "SKILLPACK_API_MANAGEMENT_KEY",
+            "SKILLPACK_API_KEY",
             "CLERK_SECRET_KEY",
             "CLERK_PUBLISHABLE_KEY",
           ],

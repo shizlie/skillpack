@@ -84,7 +84,7 @@ test("worker: provider/customer/workspace + policy + meter + summary", async () 
   const keys = generateEd25519KeyPair();
   const env = {
     DB: createTestD1Database(),
-    SKILLPACK_MANAGEMENT_API_KEY: "mgmt-key",
+    SKILLPACK_API_KEY: "mgmt-key",
     SKILLPACK_SIGNING_PRIVATE_KEY_PEM: keys.privateKeyPem,
     SKILLPACK_SIGNING_PUBLIC_KEY_PEM: keys.publicKeyPem,
   };
@@ -272,7 +272,7 @@ test("worker: accepts signing keys from *_BASE64 env vars", async () => {
   const keys = generateEd25519KeyPair();
   const env = {
     DB: createTestD1Database(),
-    SKILLPACK_MANAGEMENT_API_KEY: "mgmt-key",
+    SKILLPACK_API_KEY: "mgmt-key",
     SKILLPACK_SIGNING_PRIVATE_KEY_PEM_BASE64: Buffer.from(keys.privateKeyPem, "utf8").toString(
       "base64"
     ),
@@ -340,7 +340,7 @@ test("worker: api responses include cors headers and root stays backend-only", a
   const keys = generateEd25519KeyPair();
   const env = {
     DB: createTestD1Database(),
-    SKILLPACK_MANAGEMENT_API_KEY: "mgmt-key",
+    SKILLPACK_API_KEY: "mgmt-key",
     SKILLPACK_SIGNING_PRIVATE_KEY_PEM: keys.privateKeyPem,
     SKILLPACK_SIGNING_PUBLIC_KEY_PEM: keys.publicKeyPem,
     SKILLPACK_DASHBOARD_ORIGIN: "https://dashboard.skillpack.example",
@@ -385,7 +385,7 @@ test("worker: meter upload with x-skillpack-lease-token ignores client context a
   const keys = generateEd25519KeyPair();
   const env = {
     DB: createTestD1Database(),
-    SKILLPACK_MANAGEMENT_API_KEY: "mgmt-key",
+    SKILLPACK_API_KEY: "mgmt-key",
     SKILLPACK_SIGNING_PRIVATE_KEY_PEM: keys.privateKeyPem,
     SKILLPACK_SIGNING_PUBLIC_KEY_PEM: keys.publicKeyPem,
     SKILLPACK_DASHBOARD_ORIGIN: "https://dashboard.skillpack.example",

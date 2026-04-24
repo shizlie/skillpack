@@ -87,8 +87,6 @@ function getRequiredEnvString(env, key) {
   return value;
 }
 
-// Any authenticated Clerk user gets full management access — intentional for v1 single-operator
-// model. Add RBAC here if multi-tenant operators are introduced post-LOI.
 async function proxyApiRequest(c) {
   const auth = await authenticateDashboardRequest(c.req.raw, c.env);
   if (!auth?.userId) {
@@ -96,7 +94,7 @@ async function proxyApiRequest(c) {
   }
 
   const apiBaseUrl = getRequiredEnvString(c.env, "SKILLPACK_API_BASE_URL");
-  const apiKey = getRequiredEnvString(c.env, "SKILLPACK_API_MANAGEMENT_KEY");
+  const apiKey = getRequiredEnvString(c.env, "SKILLPACK_API_KEY");
 
   const incoming = new URL(c.req.raw.url);
   const strippedPath = incoming.pathname.slice("/api".length) || "/";
@@ -140,9 +138,6 @@ app.get("/app-config", (c) => {
     apiBaseUrlConfigured:
       typeof c.env?.SKILLPACK_API_BASE_URL === "string" &&
       c.env.SKILLPACK_API_BASE_URL.length > 0,
-    apiManagementConfigured:
-      typeof c.env?.SKILLPACK_API_MANAGEMENT_KEY === "string" &&
-      c.env.SKILLPACK_API_MANAGEMENT_KEY.length > 0,
     clerkBackendConfigured: Boolean(secretKey),
     clerkPublishableKey: publishableKey,
     clerkFrontendApiHost: decodeFrontendApiHost(publishableKey),

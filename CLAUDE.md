@@ -45,6 +45,7 @@ When adding code: pure business logic → `packages/core`. CF Worker glue → `a
     - Hosted: Hono on Cloudflare Workers + D1
     - Self-hosted: Docker image with embedded SQLite (mandatory for air-gapped customers)
 - **Dashboard UI:** deferred to post-LOI. v1 ships CLI + REST API only.
+- **Dashboard operating model:** dashboard should not assume every operation needs the backend. Preserve and design for detached-capable dashboard flows where the browser can inspect local/exported state, prepared artifacts, cached data, or operator-provided files without calling the hosted API. Use the backend only for operations that truly require hosted state mutation, hosted verification, or live sync.
 - **Demo skill:** one — legal contract review (healthcare build deferred)
 
 ## Conventions

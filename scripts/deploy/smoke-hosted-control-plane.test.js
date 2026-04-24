@@ -8,7 +8,7 @@ describe("smokeHostedControlPlane", () => {
       smokeHostedControlPlane({
         apiBaseUrl: "http://127.0.0.1:9",
         dashboardBaseUrl: "http://127.0.0.1:9",
-        managementApiKey: "dev-key",
+        apiKey: "dev-key",
       })
     ).rejects.toThrow(/ECONNREFUSED|fetch failed|connect/);
   });
@@ -24,7 +24,6 @@ describe("smokeHostedControlPlane", () => {
             apiProxyBase: "/api",
             authMode: "unconfigured",
             apiBaseUrlConfigured: false,
-            apiManagementConfigured: false,
             clerkBackendConfigured: false,
           }),
           { status: 200 }

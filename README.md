@@ -207,7 +207,7 @@ Quick path:
 ```bash
 API_BASE_URL="https://<api-worker>.workers.dev" \
 DASHBOARD_BASE_URL="https://<dashboard-worker>.workers.dev" \
-API_KEY="<management-key>" \
+API_KEY="<hosted-api-key>" \
 ./scripts/demo-cloudflare-e2e.sh
 ```
 

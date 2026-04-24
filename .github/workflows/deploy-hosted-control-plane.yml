@@ -13,7 +13,7 @@ jobs:
       DASHBOARD_ORIGIN: ${{ vars.SKILLPACK_DASHBOARD_ORIGIN }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      SMOKE_MANAGEMENT_API_KEY: ${{ secrets.SKILLPACK_MANAGEMENT_API_KEY }}
+      SMOKE_API_KEY: ${{ secrets.SKILLPACK_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -28,4 +28,4 @@ jobs:
           bun scripts/deploy/smoke-hosted-control-plane.mjs
           --api-base-url=${API_BASE_URL}
           --dashboard-base-url=${DASHBOARD_ORIGIN}
-          --management-api-key=${SMOKE_MANAGEMENT_API_KEY}
+          --api-key=${SMOKE_API_KEY}

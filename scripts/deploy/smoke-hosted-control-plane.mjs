@@ -1,7 +1,7 @@
 export async function smokeHostedControlPlane({
   apiBaseUrl,
   dashboardBaseUrl,
-  managementApiKey,
+  apiKey,
   fetchImpl = fetch,
 }) {
   const apiHealth = await fetchImpl(`${apiBaseUrl}/healthz`);
@@ -28,19 +28,16 @@ export async function smokeHostedControlPlane({
   if (config.apiBaseUrlConfigured !== true) {
     throw new Error("dashboard_config_missing_api_base_url");
   }
-  if (config.apiManagementConfigured !== true) {
-    throw new Error("dashboard_config_missing_api_management_key");
-  }
   if (config.clerkBackendConfigured !== true) {
     throw new Error("dashboard_config_missing_clerk_secret");
   }
 
-  if (typeof managementApiKey === "string" && managementApiKey.length > 0) {
+  if (typeof apiKey === "string" && apiKey.length > 0) {
     const providersRes = await fetchImpl(`${apiBaseUrl}/v1/providers`, {
-      headers: { "x-api-key": managementApiKey },
+      headers: { "x-api-key": apiKey },
     });
     if (!providersRes.ok) {
-      throw new Error(`api_management_failed:${providersRes.status}`);
+      throw new Error(`api_key_failed:${providersRes.status}`);
     }
   }
 
@@ -61,7 +58,7 @@ if (import.meta.main) {
   await smokeHostedControlPlane({
     apiBaseUrl: args["api-base-url"],
     dashboardBaseUrl: args["dashboard-base-url"],
-    managementApiKey: args["management-api-key"],
+    apiKey: args["api-key"],
   });
   console.log(JSON.stringify({ ok: true }));
 }
