@@ -19,8 +19,16 @@ if (!SAFE_ID.test(version)) throw new Error(`unsafe version string in VERSION fi
 const verticalRoot = path.join(repoRoot, "verticals", "laws-consultant");
 const distributionDir = path.join(repoRoot, "verticals", "laws-consultant", "distribution");
 const keysDir = path.join(distributionDir, "keys");
-const privateKeyFile = path.join(keysDir, "dev-private.pem");
-const publicKeyFile = path.join(keysDir, "dev-public.pem");
+const defaultPrivateKeyFile = path.join(keysDir, "dev-private.pem");
+const defaultPublicKeyFile = path.join(keysDir, "dev-public.pem");
+const privateKeyFile = process.env.SKILLPACK_BUNDLE_PRIVATE_KEY_PATH
+  ? path.resolve(repoRoot, process.env.SKILLPACK_BUNDLE_PRIVATE_KEY_PATH)
+  : defaultPrivateKeyFile;
+const publicKeyFile = process.env.SKILLPACK_BUNDLE_PUBLIC_KEY_PATH
+  ? path.resolve(repoRoot, process.env.SKILLPACK_BUNDLE_PUBLIC_KEY_PATH)
+  : defaultPublicKeyFile;
+const usingCustomSigningKeys =
+  privateKeyFile !== defaultPrivateKeyFile || publicKeyFile !== defaultPublicKeyFile;
 const licenseFile = path.join(distributionDir, "license.dev.json");
 const outputDir = path.join(repoRoot, "dist", "skills");
 const outputFile = path.join(outputDir, `${bundleId}-${version}.mcpb`);
@@ -60,10 +68,16 @@ function sha256Hex(filePath) {
   return crypto.createHash("sha256").update(buf).digest("hex");
 }
 
-fs.mkdirSync(keysDir, { recursive: true });
+fs.mkdirSync(path.dirname(privateKeyFile), { recursive: true });
+fs.mkdirSync(path.dirname(publicKeyFile), { recursive: true });
 fs.mkdirSync(outputDir, { recursive: true });
 
 if (!fs.existsSync(privateKeyFile) || !fs.existsSync(publicKeyFile)) {
+  if (usingCustomSigningKeys) {
+    throw new Error(
+      `bundle_signing_keys_missing:${path.relative(repoRoot, privateKeyFile)}:${path.relative(repoRoot, publicKeyFile)}`
+    );
+  }
   // Regenerate both if either is missing — partial state from interrupted runs would produce mismatched pairs
   const keys = generateEd25519KeyPair();
   fs.writeFileSync(privateKeyFile, keys.privateKeyPem, { mode: 0o600 });

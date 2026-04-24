@@ -24,9 +24,9 @@ jobs:
       - name: Write signing keys
         run: |
           mkdir -p verticals/laws-consultant/distribution/keys
-          printf '%s' "$PRIVATE_KEY" > verticals/laws-consultant/distribution/keys/dev-private.pem
-          printf '%s' "$PUBLIC_KEY"  > verticals/laws-consultant/distribution/keys/dev-public.pem
-          chmod 600 verticals/laws-consultant/distribution/keys/dev-private.pem
+          printf '%s' "$PRIVATE_KEY" > verticals/laws-consultant/distribution/keys/prod-private.pem
+          printf '%s' "$PUBLIC_KEY"  > verticals/laws-consultant/distribution/keys/prod-public.pem
+          chmod 600 verticals/laws-consultant/distribution/keys/prod-private.pem
         env:
           PRIVATE_KEY: ${{ secrets.LAWS_CONSULTANT_PRIVATE_KEY }}
           PUBLIC_KEY: ${{ secrets.LAWS_CONSULTANT_PUBLIC_KEY }}
@@ -52,7 +52,10 @@ jobs:
         run: bun run test:unit
 
       - name: Build bundle
-        run: bun run bundle:laws-consultant
+        run: >
+          SKILLPACK_BUNDLE_PRIVATE_KEY_PATH=verticals/laws-consultant/distribution/keys/prod-private.pem
+          SKILLPACK_BUNDLE_PUBLIC_KEY_PATH=verticals/laws-consultant/distribution/keys/prod-public.pem
+          bun run bundle:laws-consultant
 
       - name: Extract version
         id: version

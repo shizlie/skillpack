@@ -11,3 +11,4 @@ verticals/laws-consultant/distribution/keys/*.pem
 verticals/laws-consultant/distribution/license.dev.json
 **/.dev.vars
 .secrets/
+apps/*/wrangler.generated.*.json

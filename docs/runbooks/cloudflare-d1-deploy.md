@@ -96,6 +96,8 @@ The binding name must stay `DB`. `apps/api/src/index.js` expects `env.DB`.
 ## Generate The API Key, Private Key, And Public Key
 
 There is no hosted service that gives you these values. You create them.
+Use production key filenames for hosted deploys. The `dev-private.pem` and
+`dev-public.pem` paths are only for local demo/dev runs and `.dev.vars`.
 
 From repo root:
 
@@ -107,16 +109,16 @@ openssl rand -base64 48 > .secrets/hosted/api-key.txt
 
 openssl genpkey \
   -algorithm Ed25519 \
-  -out .secrets/hosted/signing-private.pem
+  -out .secrets/hosted/prod-private.pem
 
 openssl pkey \
-  -in .secrets/hosted/signing-private.pem \
+  -in .secrets/hosted/prod-private.pem \
   -pubout \
-  -out .secrets/hosted/signing-public.pem
+  -out .secrets/hosted/prod-public.pem
 
 chmod 600 .secrets/hosted/api-key.txt
-chmod 600 .secrets/hosted/signing-private.pem
-chmod 644 .secrets/hosted/signing-public.pem
+chmod 600 .secrets/hosted/prod-private.pem
+chmod 644 .secrets/hosted/prod-public.pem
 ```
 
 This creates:
@@ -124,8 +126,8 @@ This creates:
 | Generated file | What it is | To use as Cloudflare secret |
 | --- | --- | --- |
 | `.secrets/hosted/api-key.txt` | hosted API key | `SKILLPACK_API_KEY` for both Workers |
-| `.secrets/hosted/signing-private.pem` | Ed25519 private key | `SKILLPACK_SIGNING_PRIVATE_KEY_PEM` |
-| `.secrets/hosted/signing-public.pem` | Ed25519 public key | `SKILLPACK_SIGNING_PUBLIC_KEY_PEM` |
+| `.secrets/hosted/prod-private.pem` | production Ed25519 private key | `SKILLPACK_SIGNING_PRIVATE_KEY_PEM` |
+| `.secrets/hosted/prod-public.pem` | production Ed25519 public key | `SKILLPACK_SIGNING_PUBLIC_KEY_PEM` |
 
 The hosted API key is a random bearer secret. Whoever has it can call protected hosted API endpoints.
 
@@ -133,15 +135,22 @@ The API Worker uses the key to decide whether a request is allowed to call prote
 
 The signing private key signs lease tokens. The signing public key verifies those tokens. The live API Worker and any bundle you use for the live direct-meter smoke must use the same key pair, or direct upload verification will fail.
 
-For the live `.mcpb` smoke, copy this same key pair into the ignored local demo-key path before building the bundle:
+Local dev smoke uses the ignored dev-key path and writes those dev keys into `.dev.vars`:
 
 ```bash
-mkdir -p verticals/laws-consultant/distribution/keys
-cp .secrets/hosted/signing-private.pem verticals/laws-consultant/distribution/keys/dev-private.pem
-cp .secrets/hosted/signing-public.pem verticals/laws-consultant/distribution/keys/dev-public.pem
+verticals/laws-consultant/distribution/keys/dev-private.pem
+verticals/laws-consultant/distribution/keys/dev-public.pem
 ```
 
-Those `verticals/.../keys/*.pem` files are gitignored. They are local inputs for bundle building.
+Production bundle builds must use the production key pair explicitly:
+
+```bash
+SKILLPACK_BUNDLE_PRIVATE_KEY_PATH=.secrets/hosted/prod-private.pem \
+SKILLPACK_BUNDLE_PUBLIC_KEY_PATH=.secrets/hosted/prod-public.pem \
+bun run bundle:laws-consultant
+```
+
+The live `.mcpb` smoke needs a bundle signed with the same production private key that the hosted API uses to issue and verify leases.
 
 ## Set Production Secrets
 
@@ -161,8 +170,8 @@ dashboard Worker secret:
 cd apps/api
 
 bunx wrangler secret put SKILLPACK_API_KEY < ../../.secrets/hosted/api-key.txt
-bunx wrangler secret put SKILLPACK_SIGNING_PRIVATE_KEY_PEM < ../../.secrets/hosted/signing-private.pem
-bunx wrangler secret put SKILLPACK_SIGNING_PUBLIC_KEY_PEM < ../../.secrets/hosted/signing-public.pem
+bunx wrangler secret put SKILLPACK_SIGNING_PRIVATE_KEY_PEM < ../../.secrets/hosted/prod-private.pem
+bunx wrangler secret put SKILLPACK_SIGNING_PUBLIC_KEY_PEM < ../../.secrets/hosted/prod-public.pem
 ```
 
 What each secret does:
@@ -202,7 +211,10 @@ SKILLPACK_CLERK_SIGN_UP_URL
 
 They are not required for the current smoke tests.
 
-## Deploy From Your Machine
+## Production Deploy From Your Machine
+
+This path deploys to Cloudflare remote Workers and remote D1. It is separate from
+local dev smoke, which uses `wrangler dev --local` and local D1 state only.
 
 From repo root:
 
@@ -222,7 +234,9 @@ The deploy wrapper:
 4. deploys `skillpack-api`
 5. deploys `skillpack-dashboard`
 
-Generated config files are written under each app's `.wrangler/` directory.
+Generated Wrangler config files are temporary and are written beside each app's
+source `wrangler.jsonc` so relative entrypoints like `src/index.js` resolve from
+the app root. They are deleted after each deploy attempt.
 
 ## Deploy From GitHub Actions
 
@@ -312,7 +326,7 @@ Expected final output:
 PASS: usage observed (totalCalls=...)
 ```
 
-## Local Smoke Test
+## Local Dev Smoke Test
 
 Before changing production config, test the same lane locally:
 
@@ -328,6 +342,9 @@ This script:
 4. runs hosted-control-plane smoke
 5. runs full `.mcpb` direct-meter smoke
 6. asserts usage summary reflects the runtime call
+
+This does not deploy anything to Cloudflare. If Wrangler says `Resource location:
+local`, you are in the local-dev path, not the production deploy path.
 
 Logs:
 

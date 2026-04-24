@@ -31,7 +31,7 @@ function requirePublicVars(deployable) {
   }
 }
 
-function writeGeneratedConfig({ rootDir, deployableName, deployable }) {
+export function writeGeneratedConfig({ rootDir, deployableName, deployable }) {
   const sourceConfigPath = path.join(rootDir, deployable.wranglerConfig);
   const sourceConfig = parseJsonc(fs.readFileSync(sourceConfigPath, "utf8"));
   const mergedConfig = {
@@ -42,11 +42,10 @@ function writeGeneratedConfig({ rootDir, deployableName, deployable }) {
     },
   };
 
-  const generatedDir = path.join(rootDir, deployable.workdir, ".wrangler");
-  fs.mkdirSync(generatedDir, { recursive: true });
+  const generatedDir = path.dirname(sourceConfigPath);
   const generatedConfigPath = path.join(
     generatedDir,
-    `skillpack.generated.${deployableName}.json`
+    `wrangler.generated.${deployableName}.json`
   );
   fs.writeFileSync(generatedConfigPath, JSON.stringify(mergedConfig, null, 2) + "\n");
   return generatedConfigPath;
@@ -81,28 +80,32 @@ function deployWithResolvedVars({ rootDir, deployableName, deployable }) {
     deployable,
   });
 
-  if (deployableName === "api") {
-    runCommand(
-      "bun",
-      ["run", "--cwd", deployable.workdir, "d1:migrate:remote"],
-      { cwd: rootDir },
-      "deploy_api_remote_migration_failed"
-    );
-  }
+  try {
+    if (deployableName === "api") {
+      runCommand(
+        "bun",
+        ["run", "--cwd", deployable.workdir, "d1:migrate:remote"],
+        { cwd: rootDir },
+        "deploy_api_remote_migration_failed"
+      );
+    }
 
-  runCommand(
-    "bunx",
-    [
-      "wrangler",
-      "deploy",
-      "--cwd",
-      deployable.workdir,
-      "--config",
-      generatedConfigPath,
-    ],
-    { cwd: rootDir },
-    `deploy_failed:${deployableName}`
-  );
+    runCommand(
+      "bunx",
+      [
+        "wrangler",
+        "deploy",
+        "--cwd",
+        deployable.workdir,
+        "--config",
+        generatedConfigPath,
+      ],
+      { cwd: rootDir },
+      `deploy_failed:${deployableName}`
+    );
+  } finally {
+    fs.rmSync(generatedConfigPath, { force: true });
+  }
 }
 
 if (import.meta.main) {
