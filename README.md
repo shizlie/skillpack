@@ -225,6 +225,37 @@ Direct-mode hosted verification is now supported:
 - when `SKILLPACK_SYNC_MODE=direct` and `SKILLPACK_CONTROL_PLANE_URL` are set, the bundle-local meter client uploads usage directly to `/v1/meter/upload`
 - the server derives accepted usage identity from the signed lease context, not from client-supplied commercial IDs
 
+## Billing core (implemented)
+
+Billing is owned by skillpack, payment collection is pluggable.
+
+Core billing now supports:
+
+- `POST /v1/billing/pricing-rules`
+- `GET /v1/billing/pricing-rules`
+- `POST /v1/billing/invoices/draft`
+- `GET /v1/billing/invoices`
+- `POST /v1/billing/invoices/:invoiceId/payment-handoff`
+
+The CLI exposes the same first path:
+
+```bash
+skillpack billing pricing-rule create \
+  --server-url "$API_BASE_URL" --api-key "$API_KEY" \
+  --pricing-rule-id price-search \
+  --provider-id prov-1 --customer-id cust-1 \
+  --tool wiki_search --currency USD --unit-amount-cents 25
+
+skillpack billing invoice draft \
+  --server-url "$API_BASE_URL" --api-key "$API_KEY" \
+  --invoice-id inv-1 \
+  --provider-id prov-1 --customer-id cust-1 \
+  --period-start-sec 1800000000 \
+  --period-end-sec 1802592000
+```
+
+Payment adapters are handoff-only. `manual` is always available; Dodo Payments can be enabled with `DODO_PAYMENTS_API_KEY`; Stripe has a compatible adapter for hosted Checkout sessions using price IDs. The accepted usage ledger and invoice records stay inside skillpack so vendors can collect money themselves or swap payment providers later.
+
 ## Policy loop demo (implemented)
 
 CLI control commands now include:
