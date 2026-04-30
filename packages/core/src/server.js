@@ -12,11 +12,16 @@ import {
   validateDirectMeterUploadContract,
   validateLeasePayload,
   validateMeterUploadContract,
+  validateInvoiceDraftRequestContract,
+  validatePaymentHandoffRequestContract,
+  validatePricingRuleContract,
   validatePolicySnapshot,
   validateProviderCreateContract,
   validateWorkspaceCreateContract,
 } from "@skillpack/protocol";
 import { createManualTimeAttestationContract, createTsaMonitor } from "@skillpack/tsa";
+import { draftInvoiceFromUsage } from "./billing.js";
+import { createPaymentProviderRegistry } from "./payment-providers.js";
 import { createInMemoryLeaseStore } from "./storage.js";
 
 const DEFAULT_TTL_SEC = 30 * 24 * 60 * 60;
@@ -116,6 +121,16 @@ function isManagementRoute(request, pathname) {
   if (request.method === "POST" && pathname === "/v1/policies/issue") return true;
   if (request.method === "POST" && pathname === "/v1/policies/sync") return true;
   if (request.method === "GET" && pathname === "/v1/usage/summary") return true;
+  if (request.method === "POST" && pathname === "/v1/billing/pricing-rules") return true;
+  if (request.method === "GET" && pathname === "/v1/billing/pricing-rules") return true;
+  if (request.method === "POST" && pathname === "/v1/billing/invoices/draft") return true;
+  if (request.method === "GET" && pathname === "/v1/billing/invoices") return true;
+  if (
+    request.method === "POST" &&
+    /^\/v1\/billing\/invoices\/[^/]+\/payment-handoff$/.test(pathname)
+  ) {
+    return true;
+  }
   if (request.method === "POST" && pathname === "/v1/tsa/manual-attest") return true;
   if (request.method === "GET" && pathname === "/v1/tsa/manual-attestations") return true;
   if (request.method === "GET" && pathname === "/v1/tsa/manual-attestations/latest") return true;
@@ -133,6 +148,7 @@ export function createLicenseFetchHandler({
   tsaMonitor = createTsaMonitor(),
   attestationContract = createManualTimeAttestationContract(),
   managementApiKey = null,
+  paymentProviders = createPaymentProviderRegistry(),
 } = {}) {
   if (!signingPrivateKeyPem || !signingPublicKeyPem) {
     throw new Error("license_server_missing_signing_keys");
@@ -428,6 +444,92 @@ export function createLicenseFetchHandler({
         return json({ summary });
       } catch (error) {
         return json({ error: error.message }, 400);
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/billing/pricing-rules") {
+      try {
+        const body = await readBody(request);
+        const pricingRule = validatePricingRuleContract(body.pricingRule ?? body);
+        const savePricingRule = getStoreMethod(leaseStore, "savePricingRule");
+        const saved = await savePricingRule(pricingRule);
+        return json({ accepted: true, pricingRule: saved });
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 400);
+      }
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/billing/pricing-rules") {
+      try {
+        const listPricingRules = getStoreMethod(leaseStore, "listPricingRules");
+        const pricingRules = await listPricingRules({
+          providerId: url.searchParams.get("providerId") ?? undefined,
+          customerId: url.searchParams.get("customerId") ?? undefined,
+          workspaceId: url.searchParams.get("workspaceId") ?? undefined,
+        });
+        return json({ pricingRules });
+      } catch (error) {
+        return json({ error: error.message }, 400);
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/billing/invoices/draft") {
+      try {
+        const body = await readBody(request);
+        const draftRequest = validateInvoiceDraftRequestContract(body);
+        const getAcceptedUsageEvents = getStoreMethod(leaseStore, "getAcceptedUsageEvents");
+        const listPricingRules = getStoreMethod(leaseStore, "listPricingRules");
+        const saveInvoice = getStoreMethod(leaseStore, "saveInvoice");
+        const usageEvents = await getAcceptedUsageEvents(draftRequest);
+        const pricingRules = await listPricingRules(draftRequest);
+        const invoiceId = draftRequest.invoiceId ?? crypto.randomUUID();
+        const invoice = draftInvoiceFromUsage({
+          ...draftRequest,
+          invoiceId,
+          usageEvents,
+          pricingRules,
+        });
+        const saved = await saveInvoice(invoice);
+        return json({ accepted: true, invoice: saved });
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 400);
+      }
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/billing/invoices") {
+      try {
+        const listInvoices = getStoreMethod(leaseStore, "listInvoices");
+        const invoices = await listInvoices({
+          providerId: url.searchParams.get("providerId") ?? undefined,
+          customerId: url.searchParams.get("customerId") ?? undefined,
+        });
+        return json({ invoices });
+      } catch (error) {
+        return json({ error: error.message }, 400);
+      }
+    }
+
+    const paymentHandoffMatch =
+      /^\/v1\/billing\/invoices\/([^/]+)\/payment-handoff$/.exec(url.pathname);
+    if (request.method === "POST" && paymentHandoffMatch) {
+      try {
+        const invoiceId = decodeURIComponent(paymentHandoffMatch[1]);
+        const body = await readBody(request);
+        const handoffRequest = validatePaymentHandoffRequestContract(body);
+        const provider = paymentProviders.get(handoffRequest.provider);
+        if (!provider) throw new Error(`payment_provider_not_configured:${handoffRequest.provider}`);
+        const getInvoice = getStoreMethod(leaseStore, "getInvoice");
+        const savePaymentHandoff = getStoreMethod(leaseStore, "savePaymentHandoff");
+        const invoice = await getInvoice(invoiceId);
+        if (!invoice) throw new Error("invoice_not_found");
+        const paymentHandoff = await provider.createPaymentHandoff({
+          invoice,
+          request: handoffRequest,
+        });
+        const saved = await savePaymentHandoff(paymentHandoff);
+        return json({ accepted: true, paymentHandoff: saved });
+      } catch (error) {
+        return json({ accepted: false, error: error.message }, 400);
       }
     }
 

@@ -436,6 +436,101 @@ async function usageSummary(commandArgs, fetchImpl) {
   return { status: response.status, body: await response.json() };
 }
 
+async function createPricingRule(commandArgs, fetchImpl) {
+  const flags = parseArgMap(commandArgs);
+  const serverUrl = requireServerUrl(flags);
+  const headers = buildServerHeaders(flags);
+  if (!flags["pricing-rule-id"]) throw new Error("missing_pricing_rule_id");
+  if (!flags["provider-id"]) throw new Error("missing_provider_id");
+  if (!flags.currency) throw new Error("missing_currency");
+  const unitAmountCents = parseIntArg(flags["unit-amount-cents"], null);
+  if (unitAmountCents === null) throw new Error("missing_unit_amount_cents");
+  const paymentProvider =
+    flags["payment-provider"] || flags["payment-product-id"] || flags["payment-price-id"]
+      ? {
+          provider: flags["payment-provider"] ?? "manual",
+          productId: flags["payment-product-id"],
+          priceId: flags["payment-price-id"],
+        }
+      : undefined;
+  const response = await fetchImpl(
+    new Request(`${serverUrl}/v1/billing/pricing-rules`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        pricingRuleId: flags["pricing-rule-id"],
+        providerId: flags["provider-id"],
+        customerId: flags["customer-id"],
+        workspaceId: flags["workspace-id"],
+        skillId: flags["skill-id"],
+        bundleId: flags["bundle-id"],
+        tool: flags.tool,
+        currency: flags.currency,
+        unitAmountCents,
+        includedUnits: parseIntArg(flags["included-units"], undefined),
+        minimumAmountCents: parseIntArg(flags["minimum-amount-cents"], undefined),
+        status: flags.status,
+        paymentProvider,
+      }),
+    })
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+async function draftInvoice(commandArgs, fetchImpl) {
+  const flags = parseArgMap(commandArgs);
+  const serverUrl = requireServerUrl(flags);
+  const headers = buildServerHeaders(flags);
+  if (!flags["provider-id"]) throw new Error("missing_provider_id");
+  if (!flags["customer-id"]) throw new Error("missing_customer_id");
+  const periodStartSec = parseIntArg(flags["period-start-sec"], undefined);
+  const periodEndSec = parseIntArg(flags["period-end-sec"], undefined);
+  if (!Number.isInteger(periodStartSec)) throw new Error("missing_period_start_sec");
+  if (!Number.isInteger(periodEndSec)) throw new Error("missing_period_end_sec");
+  const response = await fetchImpl(
+    new Request(`${serverUrl}/v1/billing/invoices/draft`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        invoiceId: flags["invoice-id"],
+        providerId: flags["provider-id"],
+        customerId: flags["customer-id"],
+        workspaceId: flags["workspace-id"],
+        periodStartSec,
+        periodEndSec,
+        currency: flags.currency,
+      }),
+    })
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+async function createPaymentHandoff(commandArgs, fetchImpl) {
+  const flags = parseArgMap(commandArgs);
+  const serverUrl = requireServerUrl(flags);
+  const headers = buildServerHeaders(flags);
+  if (!flags["invoice-id"]) throw new Error("missing_invoice_id");
+  const customer =
+    flags["customer-email"] || flags["customer-name"]
+      ? { email: flags["customer-email"], name: flags["customer-name"] }
+      : undefined;
+  const response = await fetchImpl(
+    new Request(
+      `${serverUrl}/v1/billing/invoices/${encodeURIComponent(flags["invoice-id"])}/payment-handoff`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          provider: flags.provider ?? "manual",
+          returnUrl: flags["return-url"],
+          customer,
+        }),
+      }
+    )
+  );
+  return { status: response.status, body: await response.json() };
+}
+
 function buildBundle(commandArgs) {
   const flags = parseArgMap(commandArgs);
   const inputDir = flags["input-dir"];
@@ -547,9 +642,15 @@ export async function runSkillpackCli(
       result = await uploadMeter(args.slice(2), fetchImpl);
     } else if (group === "usage" && action === "summary") {
       result = await usageSummary(args.slice(2), fetchImpl);
+    } else if (group === "billing" && action === "pricing-rule" && args[2] === "create") {
+      result = await createPricingRule(args.slice(3), fetchImpl);
+    } else if (group === "billing" && action === "invoice" && args[2] === "draft") {
+      result = await draftInvoice(args.slice(3), fetchImpl);
+    } else if (group === "billing" && action === "payment-handoff" && args[2] === "create") {
+      result = await createPaymentHandoff(args.slice(3), fetchImpl);
     } else {
       io.stderr.write(
-        "usage: skillpack license issue|verify ... OR skillpack tsa manual-attest|latest-attestation ... OR skillpack bundle build ... OR skillpack provider create ... OR skillpack customer create ... OR skillpack workspace create ... OR skillpack policy issue|sync ... OR skillpack meter upload ... OR skillpack usage summary ...\n"
+        "usage: skillpack license issue|verify ... OR skillpack tsa manual-attest|latest-attestation ... OR skillpack bundle build ... OR skillpack provider create ... OR skillpack customer create ... OR skillpack workspace create ... OR skillpack policy issue|sync ... OR skillpack meter upload ... OR skillpack usage summary ... OR skillpack billing pricing-rule create|invoice draft|payment-handoff create ...\n"
       );
       return 2;
     }

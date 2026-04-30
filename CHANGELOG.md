@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [0.6.0.0] - 2026-04-30
+
+### Added
+
+- Billing protocol contracts for pricing rules, draft invoices, and payment handoff requests.
+- Billing core that rates accepted usage against active pricing rules, applies included units and minimum charges, and persists draft invoices with line-item JSON.
+- Management API routes for pricing-rule creation/listing, draft invoice creation/listing, and invoice payment handoff.
+- CLI billing commands for creating pricing rules, drafting invoices, and creating payment handoffs.
+- Manual, Dodo Payments, and Stripe payment provider adapters behind a registry so vendors can self-collect or drop in hosted checkout.
+- SQLite and D1 billing tables, including a standalone D1 migration for existing deployments.
+
+### Fixed
+
+- Payment adapters now skip zero-payable invoice lines and reject checkout for invoices with no payable lines, preventing accidental minimum-quantity overcharges.
+
 ## [0.5.0.1] - 2026-04-24
 
 ### Added
