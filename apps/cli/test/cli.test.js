@@ -460,6 +460,105 @@ test("cli: usage summary prints totals", async () => {
   ]);
 });
 
+test("cli: billing commands create pricing rule and draft invoice", async () => {
+  const keys = generateEd25519KeyPair();
+  const apiKey = "test-api-key";
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: apiKey,
+  });
+
+  await fetch(
+    new Request("http://local/v1/meter/upload", {
+      method: "POST",
+      headers: { "x-api-key": apiKey },
+      body: JSON.stringify({
+        workspaceId: "ws-1",
+        context: {
+          providerId: "prov-1",
+          customerId: "cust-1",
+          skillId: "skill-1",
+          leaseJti: "lease-cli-billing",
+        },
+        events: [
+          {
+            prevHash: "h0",
+            seq: 0,
+            at: 1_800_000_100,
+            kind: "tool_call",
+            seatId: "seat-1",
+            tool: "wiki_search",
+            usage: { unit: "tool_call", delta: 4 },
+          },
+        ],
+      }),
+    })
+  );
+
+  const priceSink = makeIo();
+  const priceCode = await runSkillpackCli(
+    [
+      "billing",
+      "pricing-rule",
+      "create",
+      "--server-url",
+      "http://local",
+      "--api-key",
+      apiKey,
+      "--pricing-rule-id",
+      "price-cli",
+      "--provider-id",
+      "prov-1",
+      "--customer-id",
+      "cust-1",
+      "--tool",
+      "wiki_search",
+      "--currency",
+      "usd",
+      "--unit-amount-cents",
+      "50",
+      "--payment-provider",
+      "dodo",
+      "--payment-product-id",
+      "prod_cli",
+    ],
+    priceSink.io,
+    { fetchImpl: fetch }
+  );
+  expect(priceCode).toBe(0);
+  expect(JSON.parse(priceSink.read().out).pricingRule.paymentProvider.productId).toBe("prod_cli");
+
+  const invoiceSink = makeIo();
+  const invoiceCode = await runSkillpackCli(
+    [
+      "billing",
+      "invoice",
+      "draft",
+      "--server-url",
+      "http://local",
+      "--api-key",
+      apiKey,
+      "--invoice-id",
+      "inv-cli",
+      "--provider-id",
+      "prov-1",
+      "--customer-id",
+      "cust-1",
+      "--period-start-sec",
+      "1800000000",
+      "--period-end-sec",
+      "1800001000",
+    ],
+    invoiceSink.io,
+    { fetchImpl: fetch }
+  );
+  expect(invoiceCode).toBe(0);
+  const invoice = JSON.parse(invoiceSink.read().out).invoice;
+  expect(invoice.totalAmountCents).toBe(200);
+  expect(invoice.lines[0].quantity).toBe(4);
+});
+
 test("cli: provider create fails without --provider-id", async () => {
   const sink = makeIo();
   const code = await runSkillpackCli(

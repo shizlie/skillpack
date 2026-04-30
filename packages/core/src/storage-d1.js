@@ -72,6 +72,49 @@ CREATE TABLE IF NOT EXISTS accepted_usage_events (
   event_json TEXT NOT NULL,
   UNIQUE (workspace_id, seat_id, lease_jti, event_seq)
 );
+
+CREATE TABLE IF NOT EXISTS pricing_rules (
+  pricing_rule_id TEXT PRIMARY KEY,
+  provider_id TEXT NOT NULL,
+  customer_id TEXT,
+  workspace_id TEXT,
+  skill_id TEXT,
+  bundle_id TEXT,
+  tool_name TEXT,
+  unit TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  unit_amount_cents INTEGER NOT NULL,
+  included_units REAL NOT NULL,
+  minimum_amount_cents INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  payment_provider_json TEXT,
+  updated_at_sec INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS invoices (
+  invoice_id TEXT PRIMARY KEY,
+  provider_id TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  workspace_id TEXT,
+  status TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  period_start_sec INTEGER NOT NULL,
+  period_end_sec INTEGER NOT NULL,
+  subtotal_amount_cents INTEGER NOT NULL,
+  total_amount_cents INTEGER NOT NULL,
+  invoice_json TEXT NOT NULL,
+  updated_at_sec INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS payment_handoffs (
+  invoice_id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  status TEXT NOT NULL,
+  checkout_url TEXT,
+  external_id TEXT,
+  handoff_json TEXT NOT NULL,
+  updated_at_sec INTEGER NOT NULL
+);
 `;
 const D1_SCHEMA_STATEMENTS = D1_SCHEMA_SQL.split(";")
   .map((statement) => statement.trim())
@@ -80,6 +123,48 @@ const D1_SCHEMA_STATEMENTS = D1_SCHEMA_SQL.split(";")
 
 function normalizeSeatId(seatId) {
   return seatId ?? "default";
+}
+
+function mapPricingRule(row) {
+  return {
+    pricingRuleId: row.pricing_rule_id,
+    providerId: row.provider_id,
+    customerId: row.customer_id ?? null,
+    workspaceId: row.workspace_id ?? null,
+    skillId: row.skill_id ?? null,
+    bundleId: row.bundle_id ?? null,
+    tool: row.tool_name ?? null,
+    unit: row.unit,
+    currency: row.currency,
+    unitAmountCents: Number(row.unit_amount_cents),
+    includedUnits: Number(row.included_units),
+    minimumAmountCents: Number(row.minimum_amount_cents),
+    status: row.status,
+    paymentProvider: row.payment_provider_json ? JSON.parse(row.payment_provider_json) : null,
+  };
+}
+
+function mapUsageEvent(row) {
+  return {
+    eventId: row.event_id,
+    providerId: row.provider_id,
+    customerId: row.customer_id,
+    workspaceId: row.workspace_id,
+    seatId: row.seat_id,
+    skillId: row.skill_id ?? null,
+    bundleId: row.bundle_id ?? null,
+    leaseId: row.lease_id ?? null,
+    leaseJti: row.lease_jti ?? null,
+    policyId: row.policy_id ?? null,
+    tool: row.tool_name,
+    eventKind: row.event_kind,
+    usage: { unit: row.usage_unit, delta: Number(row.usage_delta) },
+    eventSeq: Number(row.event_seq),
+    eventHash: row.event_hash ?? null,
+    prevHash: row.prev_hash,
+    eventAtSec: Number(row.event_at_sec),
+    rawEvent: row.event_json ? JSON.parse(row.event_json) : {},
+  };
 }
 
 async function firstRow(db, sql, ...params) {
@@ -472,6 +557,177 @@ export function createD1LeaseStore({ db }) {
         )
       );
       await db.batch(batched);
+    },
+    async savePricingRule(rule) {
+      await ensureReady();
+      await runStmt(
+        db,
+        `INSERT INTO pricing_rules (
+          pricing_rule_id, provider_id, customer_id, workspace_id, skill_id, bundle_id,
+          tool_name, unit, currency, unit_amount_cents, included_units,
+          minimum_amount_cents, status, payment_provider_json, updated_at_sec
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+        ON CONFLICT(pricing_rule_id)
+        DO UPDATE SET
+          provider_id = excluded.provider_id,
+          customer_id = excluded.customer_id,
+          workspace_id = excluded.workspace_id,
+          skill_id = excluded.skill_id,
+          bundle_id = excluded.bundle_id,
+          tool_name = excluded.tool_name,
+          unit = excluded.unit,
+          currency = excluded.currency,
+          unit_amount_cents = excluded.unit_amount_cents,
+          included_units = excluded.included_units,
+          minimum_amount_cents = excluded.minimum_amount_cents,
+          status = excluded.status,
+          payment_provider_json = excluded.payment_provider_json,
+          updated_at_sec = excluded.updated_at_sec`,
+        rule.pricingRuleId,
+        rule.providerId,
+        rule.customerId ?? null,
+        rule.workspaceId ?? null,
+        rule.skillId ?? null,
+        rule.bundleId ?? null,
+        rule.tool ?? null,
+        rule.unit,
+        rule.currency,
+        rule.unitAmountCents,
+        rule.includedUnits,
+        rule.minimumAmountCents,
+        rule.status,
+        rule.paymentProvider ? JSON.stringify(rule.paymentProvider) : null,
+        Math.floor(Date.now() / 1000)
+      );
+      return rule;
+    },
+    async listPricingRules({ providerId, customerId, workspaceId } = {}) {
+      await ensureReady();
+      const rows = await allRows(
+        db,
+        `SELECT *
+         FROM pricing_rules
+         WHERE (?1 IS NULL OR provider_id = ?1)
+           AND (?2 IS NULL OR customer_id IS NULL OR customer_id = ?2)
+           AND (?3 IS NULL OR workspace_id IS NULL OR workspace_id = ?3)
+         ORDER BY pricing_rule_id`,
+        providerId ?? null,
+        customerId ?? null,
+        workspaceId ?? null
+      );
+      return rows.map(mapPricingRule);
+    },
+    async getAcceptedUsageEvents({
+      providerId,
+      customerId,
+      workspaceId,
+      periodStartSec,
+      periodEndSec,
+    } = {}) {
+      await ensureReady();
+      const rows = await allRows(
+        db,
+        `SELECT *
+         FROM accepted_usage_events
+         WHERE usage_unit = 'tool_call'
+           AND (?1 IS NULL OR provider_id = ?1)
+           AND (?2 IS NULL OR customer_id = ?2)
+           AND (?3 IS NULL OR workspace_id = ?3)
+           AND (?4 IS NULL OR event_at_sec >= ?4)
+           AND (?5 IS NULL OR event_at_sec < ?5)
+         ORDER BY event_at_sec, event_seq`,
+        providerId ?? null,
+        customerId ?? null,
+        workspaceId ?? null,
+        periodStartSec ?? null,
+        periodEndSec ?? null
+      );
+      return rows.map(mapUsageEvent);
+    },
+    async saveInvoice(invoice) {
+      await ensureReady();
+      await runStmt(
+        db,
+        `INSERT INTO invoices (
+          invoice_id, provider_id, customer_id, workspace_id, status, currency,
+          period_start_sec, period_end_sec, subtotal_amount_cents,
+          total_amount_cents, invoice_json, updated_at_sec
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+        ON CONFLICT(invoice_id)
+        DO UPDATE SET
+          provider_id = excluded.provider_id,
+          customer_id = excluded.customer_id,
+          workspace_id = excluded.workspace_id,
+          status = excluded.status,
+          currency = excluded.currency,
+          period_start_sec = excluded.period_start_sec,
+          period_end_sec = excluded.period_end_sec,
+          subtotal_amount_cents = excluded.subtotal_amount_cents,
+          total_amount_cents = excluded.total_amount_cents,
+          invoice_json = excluded.invoice_json,
+          updated_at_sec = excluded.updated_at_sec`,
+        invoice.invoiceId,
+        invoice.providerId,
+        invoice.customerId,
+        invoice.workspaceId ?? null,
+        invoice.status,
+        invoice.currency,
+        invoice.periodStartSec,
+        invoice.periodEndSec,
+        invoice.subtotalAmountCents,
+        invoice.totalAmountCents,
+        JSON.stringify(invoice),
+        Math.floor(Date.now() / 1000)
+      );
+      return invoice;
+    },
+    async getInvoice(invoiceId) {
+      await ensureReady();
+      const row = await firstRow(
+        db,
+        "SELECT invoice_json FROM invoices WHERE invoice_id = ?1 LIMIT 1",
+        invoiceId
+      );
+      return row ? JSON.parse(row.invoice_json) : null;
+    },
+    async listInvoices({ providerId, customerId } = {}) {
+      await ensureReady();
+      const rows = await allRows(
+        db,
+        `SELECT invoice_json
+         FROM invoices
+         WHERE (?1 IS NULL OR provider_id = ?1)
+           AND (?2 IS NULL OR customer_id = ?2)
+         ORDER BY invoice_id`,
+        providerId ?? null,
+        customerId ?? null
+      );
+      return rows.map((row) => JSON.parse(row.invoice_json));
+    },
+    async savePaymentHandoff(handoff) {
+      await ensureReady();
+      await runStmt(
+        db,
+        `INSERT INTO payment_handoffs (
+          invoice_id, provider, status, checkout_url, external_id, handoff_json, updated_at_sec
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        ON CONFLICT(invoice_id)
+        DO UPDATE SET
+          provider = excluded.provider,
+          status = excluded.status,
+          checkout_url = excluded.checkout_url,
+          external_id = excluded.external_id,
+          handoff_json = excluded.handoff_json,
+          updated_at_sec = excluded.updated_at_sec`,
+        handoff.invoiceId,
+        handoff.provider,
+        handoff.status,
+        handoff.checkoutUrl ?? null,
+        handoff.externalId ?? null,
+        JSON.stringify(handoff),
+        Math.floor(Date.now() / 1000)
+      );
+      return handoff;
     },
     async getUsageSummary({
       providerId,

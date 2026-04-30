@@ -1,6 +1,12 @@
 import { Hono } from "hono";
 
-import { createD1LeaseStore, createLicenseFetchHandler } from "@skillpack/core";
+import {
+  createD1LeaseStore,
+  createDodoPaymentProvider,
+  createLicenseFetchHandler,
+  createPaymentProviderRegistry,
+  createStripePaymentProvider,
+} from "@skillpack/core";
 
 const app = new Hono();
 
@@ -39,11 +45,25 @@ function getFetchHandler(env) {
     throw new Error("worker_missing_d1_binding_DB");
   }
 
+  const paymentAdapters = [];
+  if (typeof env?.DODO_PAYMENTS_API_KEY === "string" && env.DODO_PAYMENTS_API_KEY.length > 0) {
+    paymentAdapters.push(
+      createDodoPaymentProvider({
+        apiKey: env.DODO_PAYMENTS_API_KEY,
+        environment: env.DODO_PAYMENTS_ENVIRONMENT ?? "live",
+      })
+    );
+  }
+  if (typeof env?.STRIPE_SECRET_KEY === "string" && env.STRIPE_SECRET_KEY.length > 0) {
+    paymentAdapters.push(createStripePaymentProvider({ apiKey: env.STRIPE_SECRET_KEY }));
+  }
+
   const handler = createLicenseFetchHandler({
     signingPrivateKeyPem: getPemFromEnv(env, "SKILLPACK_SIGNING_PRIVATE_KEY_PEM"),
     signingPublicKeyPem: getPemFromEnv(env, "SKILLPACK_SIGNING_PUBLIC_KEY_PEM"),
     managementApiKey: getEnvString(env, "SKILLPACK_API_KEY"),
     leaseStore: createD1LeaseStore({ db }),
+    paymentProviders: createPaymentProviderRegistry({ providers: paymentAdapters }),
   });
 
   handlerCache.set(env, handler);

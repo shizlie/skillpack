@@ -8,6 +8,9 @@ export function createInMemoryLeaseStore() {
   const providers = new Map();
   const customers = new Map();
   const workspaces = new Map();
+  const pricingRules = new Map();
+  const invoices = new Map();
+  const paymentHandoffs = new Map();
 
   function key(customerId, seatId = "default") {
     return `${customerId}::${seatId}`;
@@ -129,6 +132,59 @@ export function createInMemoryLeaseStore() {
           meterEvents.push({ ...event });
         }
       }
+    },
+    savePricingRule(rule) {
+      pricingRules.set(rule.pricingRuleId, { ...rule });
+      return pricingRules.get(rule.pricingRuleId);
+    },
+    listPricingRules({ providerId, customerId, workspaceId } = {}) {
+      return Array.from(pricingRules.values())
+        .filter((rule) => {
+          if (providerId && rule.providerId !== providerId) return false;
+          if (customerId && rule.customerId && rule.customerId !== customerId) return false;
+          if (workspaceId && rule.workspaceId && rule.workspaceId !== workspaceId) return false;
+          return true;
+        })
+        .sort((a, b) => a.pricingRuleId.localeCompare(b.pricingRuleId));
+    },
+    getAcceptedUsageEvents({
+      providerId,
+      customerId,
+      workspaceId,
+      periodStartSec,
+      periodEndSec,
+    } = {}) {
+      return meterEvents
+        .filter((event) => {
+          if (providerId && event.providerId !== providerId) return false;
+          if (customerId && event.customerId !== customerId) return false;
+          if (workspaceId && event.workspaceId !== workspaceId) return false;
+          if (Number.isInteger(periodStartSec) && event.eventAtSec < periodStartSec) return false;
+          if (Number.isInteger(periodEndSec) && event.eventAtSec >= periodEndSec) return false;
+          return true;
+        })
+        .map((event) => ({ ...event, usage: { ...event.usage } }));
+    },
+    saveInvoice(invoice) {
+      invoices.set(invoice.invoiceId, { ...invoice, lines: invoice.lines.map((line) => ({ ...line })) });
+      return invoices.get(invoice.invoiceId);
+    },
+    getInvoice(invoiceId) {
+      const invoice = invoices.get(invoiceId);
+      return invoice ? { ...invoice, lines: invoice.lines.map((line) => ({ ...line })) } : null;
+    },
+    listInvoices({ providerId, customerId } = {}) {
+      return Array.from(invoices.values())
+        .filter((invoice) => {
+          if (providerId && invoice.providerId !== providerId) return false;
+          if (customerId && invoice.customerId !== customerId) return false;
+          return true;
+        })
+        .sort((a, b) => a.invoiceId.localeCompare(b.invoiceId));
+    },
+    savePaymentHandoff(handoff) {
+      paymentHandoffs.set(handoff.invoiceId, { ...handoff });
+      return paymentHandoffs.get(handoff.invoiceId);
     },
     getUsageSummary({
       providerId,
