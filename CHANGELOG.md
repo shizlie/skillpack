@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [Unreleased]
+
+### Added
+
+- Hosted dashboard billing cockpit for pricing rules, draft invoices, invoice listing, and manual/Dodo/Stripe handoff creation through the authenticated proxy.
+
 ## [0.6.0.0] - 2026-04-30
 
 ### Added

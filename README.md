@@ -46,7 +46,7 @@ Compiled `.mcpb` bundles fix the format. skillpack adds the commerce.
 | License server (hosted)      | Hono on Cloudflare Workers + D1                                   |
 | License server (self-hosted) | Docker + SQLite. Mandatory v1 deliverable for air-gapped buyers.  |
 | TSA safeguards               | Token-freshness warnings + manual time-attestation contract       |
-| Vendor dashboard             | Deferred to post-LOI. v1 ships `skillpack license` CLI + REST API |
+| Vendor dashboard             | Cloudflare Worker dashboard with Clerk auth + server-side API proxy |
 | Demo skill                   | One legal contract review skill. No healthcare build in v1.       |
 
 Full design: `~/.gstack/projects/hcproduct-verticalAI/baoharryngo-master-design-20260418-233940.md`
@@ -55,12 +55,12 @@ Full design: `~/.gstack/projects/hcproduct-verticalAI/baoharryngo-master-design-
 
 ## Out of scope for v1
 
-- Vendor dashboard UI (CLI + REST API only)
+- Accounting-grade invoice lifecycle, tax, refunds, and reconciliation
 - Healthcare demo skill build (outreach only)
 - Multi-seat/per-node licensing (one license = one install)
 - FedRAMP, SOC2 Type II, HIPAA BAA (buyer-side vendor requirement)
 - Bytecode/native obfuscation (v2)
-- Stripe/billing integration (audit signal only in v1)
+- Payment webhooks and automatic invoice status reconciliation
 - Public docs site
 - Language-specific SDKs (Python/TS); CLI wraps MCPB
 - Free hosted tier/multi-tenant license server
@@ -237,7 +237,9 @@ Core billing now supports:
 - `GET /v1/billing/invoices`
 - `POST /v1/billing/invoices/:invoiceId/payment-handoff`
 
-The CLI exposes the same first path:
+The hosted dashboard exposes pricing-rule creation, invoice drafting, invoice listing, and
+manual/Dodo/Stripe payment handoff creation through the authenticated worker proxy. The CLI
+exposes the same first path for self-hosted and open-source operators:
 
 ```bash
 skillpack billing pricing-rule create \
