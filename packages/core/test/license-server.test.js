@@ -121,6 +121,79 @@ test("manual TSA attestation endpoint accepts contract payload", async () => {
   expect(body.record.seatId).toBe("seat-a");
 });
 
+test("management routes can use a custom authenticator instead of x-api-key", async () => {
+  const keys = generateEd25519KeyPair();
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementAuthenticator: async (request) =>
+      request.headers.get("authorization") === "Bearer clerk-session",
+  });
+
+  const unauthorized = await fetch(
+    new Request("http://local/v1/providers", {
+      method: "GET",
+      headers: { authorization: "Bearer wrong" },
+    })
+  );
+  expect(unauthorized.status).toBe(401);
+  expect(await unauthorized.json()).toEqual({ error: "unauthorized" });
+
+  const authorized = await fetch(
+    new Request("http://local/v1/providers", {
+      method: "GET",
+      headers: { authorization: "Bearer clerk-session" },
+    })
+  );
+  expect(authorized.status).toBe(200);
+  expect(await authorized.json()).toEqual({ providers: [] });
+});
+
+test("management meter upload can use a custom authenticator", async () => {
+  const keys = generateEd25519KeyPair();
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementAuthenticator: async (request) =>
+      request.headers.get("authorization") === "Bearer clerk-session",
+  });
+
+  const res = await fetch(
+    new Request("http://local/v1/meter/upload", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer clerk-session",
+      },
+      body: JSON.stringify({
+        workspaceId: "ws-1",
+        context: {
+          providerId: "prov-1",
+          customerId: "cust-1",
+          workspaceId: "ws-1",
+        },
+        events: [
+          {
+            prevHash: "GENESIS",
+            seq: 0,
+            at: 1_800_000_100,
+            kind: "tool_call",
+            seatId: "seat-1",
+            tool: "wiki_search",
+            usage: { unit: "tool_call", delta: 1 },
+          },
+        ],
+      }),
+    })
+  );
+  expect(res.status).toBe(200);
+  expect(await res.json()).toMatchObject({
+    accepted: true,
+    mode: "management",
+    ack: { count: 1 },
+  });
+});
+
 test("lease issue exposes TSA warning state when token is near expiry", async () => {
   const keys = generateEd25519KeyPair();
   const mgmtKey = "test-tsa-warning-key";
