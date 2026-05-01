@@ -8,6 +8,7 @@ describe("resolveHostedManifest", () => {
       inputs: {
         apiPublicBaseUrl: { required: true },
         dashboardPublicOrigin: { required: true },
+        managementAuthMode: { default: "hybrid" },
       },
       deployables: {
         api: {
@@ -15,12 +16,14 @@ describe("resolveHostedManifest", () => {
           wranglerConfig: "apps/api/wrangler.jsonc",
           publicVars: {
             SKILLPACK_DASHBOARD_ORIGIN: { fromInput: "dashboardPublicOrigin" },
+            SKILLPACK_MANAGEMENT_AUTH_MODE: { fromInput: "managementAuthMode" },
           },
           secrets: [
-            "SKILLPACK_API_KEY",
+            "CLERK_SECRET_KEY",
             "SKILLPACK_SIGNING_PRIVATE_KEY_PEM",
             "SKILLPACK_SIGNING_PUBLIC_KEY_PEM",
           ],
+          optionalSecrets: ["SKILLPACK_API_KEY"],
         },
         dashboard: {
           workdir: "apps/dashboard",
@@ -28,12 +31,13 @@ describe("resolveHostedManifest", () => {
           publicVars: {
             SKILLPACK_API_BASE_URL: { fromInput: "apiPublicBaseUrl" },
             SKILLPACK_DASHBOARD_ORIGIN: { fromInput: "dashboardPublicOrigin" },
+            SKILLPACK_MANAGEMENT_AUTH_MODE: { fromInput: "managementAuthMode" },
           },
           secrets: [
-            "SKILLPACK_API_KEY",
             "CLERK_SECRET_KEY",
             "CLERK_PUBLISHABLE_KEY",
           ],
+          optionalSecrets: ["SKILLPACK_API_KEY"],
         },
       },
     };
@@ -50,5 +54,12 @@ describe("resolveHostedManifest", () => {
     expect(
       resolved.deployables.dashboard.publicVars.SKILLPACK_API_BASE_URL
     ).toBe("https://skillpack-api.example.workers.dev");
+    expect(resolved.deployables.api.publicVars.SKILLPACK_MANAGEMENT_AUTH_MODE).toBe(
+      "hybrid"
+    );
+    expect(
+      resolved.deployables.dashboard.publicVars.SKILLPACK_MANAGEMENT_AUTH_MODE
+    ).toBe("hybrid");
+    expect(resolved.deployables.api.optionalSecrets).toEqual(["SKILLPACK_API_KEY"]);
   });
 });

@@ -200,16 +200,19 @@ Quick path:
 ./scripts/demo-cloudflare-local-e2e.sh
 ```
 
-2. Configure D1, public origins, and secrets for the hosted pair
-3. Deploy the hosted control plane
-4. Run deployed end-to-end smoke:
+2. Configure D1, public origins, Clerk secrets, signing keys, and optional `SKILLPACK_API_KEY` for the hosted pair
+3. Deploy the hosted control plane from a terminal with `bunx wrangler login` and `scripts/deploy/deploy-hosted-control-plane.mjs`
+4. Run deployed smoke with either the Skillpack shared key or a Clerk bearer token:
 
 ```bash
-API_BASE_URL="https://<api-worker>.workers.dev" \
-DASHBOARD_BASE_URL="https://<dashboard-worker>.workers.dev" \
-API_KEY="<hosted-api-key>" \
-./scripts/demo-cloudflare-e2e.sh
+bun scripts/deploy/smoke-hosted-control-plane.mjs \
+  --api-base-url="https://<api-worker>.workers.dev" \
+  --dashboard-base-url="https://<dashboard-worker>.workers.dev" \
+  --api-key="<SKILLPACK_API_KEY>"
 ```
+
+For Clerk-only API verification, replace `--api-key` with
+`--api-auth-header="Bearer <short-lived Clerk session token>"`.
 
 Continuous meter sync helper:
 

@@ -7,9 +7,6 @@ import {
   renderDashboardHtml,
 } from "./dashboard-ui.js";
 
-const app = new Hono();
-const clerkClientCache = new WeakMap();
-
 function getPublishableKey(env) {
   const value =
     env?.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
@@ -52,7 +49,7 @@ function getDashboardOrigin(request, env) {
   return new URL(request.url).origin;
 }
 
-function getClerkClient(env) {
+function getClerkClient(env, { clerkClientCache, createClerkClientImpl }) {
   if (clerkClientCache.has(env)) return clerkClientCache.get(env);
 
   const publishableKey = getPublishableKey(env);
@@ -60,7 +57,7 @@ function getClerkClient(env) {
   if (!publishableKey) throw new Error("dashboard_missing_clerk_publishable_key");
   if (!secretKey) throw new Error("dashboard_missing_clerk_secret_key");
 
-  const clerkClient = createClerkClient({
+  const clerkClient = createClerkClientImpl({
     publishableKey,
     secretKey,
   });
@@ -68,8 +65,8 @@ function getClerkClient(env) {
   return clerkClient;
 }
 
-async function authenticateDashboardRequest(request, env) {
-  const clerkClient = getClerkClient(env);
+async function authenticateDashboardRequest(request, env, workerOptions) {
+  const clerkClient = getClerkClient(env, workerOptions);
   const state = await clerkClient.authenticateRequest(request, {
     authorizedParties: [getDashboardOrigin(request, env)],
   });
@@ -87,14 +84,49 @@ function getRequiredEnvString(env, key) {
   return value;
 }
 
-async function proxyApiRequest(c) {
-  const auth = await authenticateDashboardRequest(c.req.raw, c.env);
+function getManagementAuthMode(env) {
+  const mode =
+    env?.SKILLPACK_API_AUTH_MODE ??
+    env?.SKILLPACK_MANAGEMENT_AUTH_MODE ??
+    "shared-key";
+  if (mode === "shared-key" || mode === "clerk" || mode === "hybrid") {
+    return mode;
+  }
+  throw new Error("dashboard_invalid_management_auth_mode");
+}
+
+function getOptionalEnvString(env, key) {
+  const value = env?.[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function addUpstreamAuthHeaders(headers, request, env) {
+  const mode = getManagementAuthMode(env);
+  const incomingAuthorization = request.headers.get("authorization");
+  if (mode === "clerk") {
+    if (!incomingAuthorization) throw new Error("dashboard_missing_authorization_header");
+    headers.set("authorization", incomingAuthorization);
+    return;
+  }
+  if (mode === "hybrid" && incomingAuthorization) {
+    headers.set("authorization", incomingAuthorization);
+    return;
+  }
+  const apiKey =
+    mode === "hybrid"
+      ? getOptionalEnvString(env, "SKILLPACK_API_KEY")
+      : getRequiredEnvString(env, "SKILLPACK_API_KEY");
+  if (!apiKey) throw new Error("dashboard_missing_env_SKILLPACK_API_KEY");
+  headers.set("x-api-key", apiKey);
+}
+
+async function proxyApiRequest(c, workerOptions) {
+  const auth = await authenticateDashboardRequest(c.req.raw, c.env, workerOptions);
   if (!auth?.userId) {
     return c.json({ error: "unauthorized" }, 401);
   }
 
   const apiBaseUrl = getRequiredEnvString(c.env, "SKILLPACK_API_BASE_URL");
-  const apiKey = getRequiredEnvString(c.env, "SKILLPACK_API_KEY");
 
   const incoming = new URL(c.req.raw.url);
   const strippedPath = incoming.pathname.slice("/api".length) || "/";
@@ -106,10 +138,10 @@ async function proxyApiRequest(c) {
   const headers = new Headers();
   const contentType = c.req.raw.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
-  headers.set("x-api-key", apiKey);
+  addUpstreamAuthHeaders(headers, c.req.raw, c.env);
   headers.set("x-skillpack-dashboard-user-id", auth.userId);
 
-  const response = await fetch(upstreamUrl.toString(), {
+  const response = await workerOptions.fetchImpl(upstreamUrl.toString(), {
     method: c.req.raw.method,
     headers,
     body:
@@ -125,44 +157,58 @@ async function proxyApiRequest(c) {
   });
 }
 
-app.get("/healthz", (c) =>
-  c.json({ ok: true, service: "dashboard-worker" })
-);
+export function createDashboardWorker({
+  createClerkClientImpl = createClerkClient,
+  fetchImpl = fetch,
+} = {}) {
+  const app = new Hono();
+  const workerOptions = {
+    clerkClientCache: new WeakMap(),
+    createClerkClientImpl,
+    fetchImpl,
+  };
 
-app.get("/app-config", (c) => {
-  const publishableKey = getPublishableKey(c.env);
-  const secretKey = getSecretKey(c.env);
-  return c.json({
-    apiProxyBase: "/api",
-    authMode: publishableKey ? "clerk" : "unconfigured",
-    apiBaseUrlConfigured:
-      typeof c.env?.SKILLPACK_API_BASE_URL === "string" &&
-      c.env.SKILLPACK_API_BASE_URL.length > 0,
-    clerkBackendConfigured: Boolean(secretKey),
-    clerkPublishableKey: publishableKey,
-    clerkFrontendApiHost: decodeFrontendApiHost(publishableKey),
-    clerkSignInUrl: c.env?.SKILLPACK_CLERK_SIGN_IN_URL ?? null,
-    clerkSignUpUrl: c.env?.SKILLPACK_CLERK_SIGN_UP_URL ?? null,
+  app.get("/healthz", (c) =>
+    c.json({ ok: true, service: "dashboard-worker" })
+  );
+
+  app.get("/app-config", (c) => {
+    const publishableKey = getPublishableKey(c.env);
+    const secretKey = getSecretKey(c.env);
+    return c.json({
+      apiProxyBase: "/api",
+      authMode: publishableKey ? "clerk" : "unconfigured",
+      apiBaseUrlConfigured:
+        typeof c.env?.SKILLPACK_API_BASE_URL === "string" &&
+        c.env.SKILLPACK_API_BASE_URL.length > 0,
+      clerkBackendConfigured: Boolean(secretKey),
+      clerkPublishableKey: publishableKey,
+      clerkFrontendApiHost: decodeFrontendApiHost(publishableKey),
+      clerkSignInUrl: c.env?.SKILLPACK_CLERK_SIGN_IN_URL ?? null,
+      clerkSignUpUrl: c.env?.SKILLPACK_CLERK_SIGN_UP_URL ?? null,
+    });
   });
-});
 
-app.get("/assets/dashboard.css", () =>
-  new Response(dashboardStyles, {
-    headers: { "content-type": "text/css; charset=utf-8" },
-  })
-);
+  app.get("/assets/dashboard.css", () =>
+    new Response(dashboardStyles, {
+      headers: { "content-type": "text/css; charset=utf-8" },
+    })
+  );
 
-app.get("/assets/dashboard.js", () =>
-  new Response(dashboardScript, {
-    headers: { "content-type": "application/javascript; charset=utf-8" },
-  })
-);
+  app.get("/assets/dashboard.js", () =>
+    new Response(dashboardScript, {
+      headers: { "content-type": "application/javascript; charset=utf-8" },
+    })
+  );
 
-app.all("/api/*", proxyApiRequest);
+  app.all("/api/*", (c) => proxyApiRequest(c, workerOptions));
 
-app.get("/", (c) => c.html(renderDashboardHtml()));
-app.get("*", (c) => c.html(renderDashboardHtml()));
+  app.get("/", (c) => c.html(renderDashboardHtml()));
+  app.get("*", (c) => c.html(renderDashboardHtml()));
 
-export default {
-  fetch: app.fetch,
-};
+  return {
+    fetch: app.fetch,
+  };
+}
+
+export default createDashboardWorker();

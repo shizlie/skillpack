@@ -75,6 +75,28 @@ function isValidManagementKey(request, managementApiKey) {
   return crypto.timingSafeEqual(hashKey(providedApiKey), hashKey(managementApiKey));
 }
 
+async function authenticateManagementRequest(
+  request,
+  { managementApiKey, managementAuthenticator }
+) {
+  if (typeof managementAuthenticator === "function") {
+    try {
+      return (await managementAuthenticator(request)) === true
+        ? null
+        : json({ error: "unauthorized" }, 401);
+    } catch {
+      return json({ error: "unauthorized" }, 401);
+    }
+  }
+  if (!managementApiKey) {
+    return json({ error: "management_api_key_not_configured" }, 503);
+  }
+  if (!isValidManagementKey(request, managementApiKey)) {
+    return json({ error: "unauthorized" }, 401);
+  }
+  return null;
+}
+
 function authenticateDirectMeterUpload(request, signingPublicKeyPem, nowSec) {
   const leaseToken = request.headers.get("x-skillpack-lease-token");
   if (typeof leaseToken !== "string" || leaseToken.length === 0) {
@@ -155,6 +177,7 @@ export function createLicenseFetchHandler({
   tsaMonitor = createTsaMonitor(),
   attestationContract = createManualTimeAttestationContract(),
   managementApiKey = null,
+  managementAuthenticator = null,
   paymentProviders = createPaymentProviderRegistry(),
 } = {}) {
   if (!signingPrivateKeyPem || !signingPublicKeyPem) {
@@ -166,12 +189,11 @@ export function createLicenseFetchHandler({
     const nowSec = Math.floor(Date.now() / 1000);
 
     if (isManagementRoute(request, url.pathname)) {
-      if (!managementApiKey) {
-        return json({ error: "management_api_key_not_configured" }, 503);
-      }
-      if (!isValidManagementKey(request, managementApiKey)) {
-        return json({ error: "unauthorized" }, 401);
-      }
+      const authError = await authenticateManagementRequest(request, {
+        managementApiKey,
+        managementAuthenticator,
+      });
+      if (authError) return authError;
     }
 
     if (request.method === "GET" && url.pathname === "/healthz") {
@@ -433,12 +455,11 @@ export function createLicenseFetchHandler({
             leaseJti: directLease.jti,
           });
         } else {
-          if (!managementApiKey) {
-            return json({ error: "management_api_key_not_configured" }, 503);
-          }
-          if (!isValidManagementKey(request, managementApiKey)) {
-            return json({ error: "unauthorized" }, 401);
-          }
+          const authError = await authenticateManagementRequest(request, {
+            managementApiKey,
+            managementAuthenticator,
+          });
+          if (authError) return authError;
           validated = validateMeterUploadContract(body);
         }
       } catch (error) {

@@ -35,7 +35,7 @@ You need:
 - a Cloudflare Workers subdomain
 - production Ed25519 signing key pair, generated below if you do not already have one
 - Clerk application keys for dashboard auth
-- one hosted API key value, generated below
+- optional Skillpack shared API key value for shared-key or hybrid automation, generated below
 
 Do not commit private keys, `.dev.vars`, or generated Wrangler auth files.
 
@@ -93,7 +93,21 @@ Wrangler prints a `database_id`. Copy that value into `apps/api/wrangler.jsonc`:
 
 The binding name must stay `DB`. `apps/api/src/index.js` expects `env.DB`.
 
-## Generate The API Key, Private Key, And Public Key
+## Management Auth Modes
+
+Protected Skillpack management routes can authenticate in three modes:
+
+| Mode | `SKILLPACK_MANAGEMENT_AUTH_MODE` | Best for | Required auth material |
+| --- | --- | --- | --- |
+| Shared key | `shared-key` | self-hosted and simple automation | `SKILLPACK_API_KEY` |
+| Clerk | `clerk` | hosted dashboard-only operation | `CLERK_SECRET_KEY` on API and dashboard Clerk keys |
+| Hybrid | `hybrid` | hosted default | `CLERK_SECRET_KEY`; optional `SKILLPACK_API_KEY` for automation |
+
+The deploy manifest defaults hosted deploys to `hybrid`. That means dashboard calls can use Clerk bearer tokens, while scripts can still use `SKILLPACK_API_KEY` if you choose to set one.
+
+`SKILLPACK_API_KEY` is a Skillpack management bearer secret, not a Cloudflare credential. It protects Skillpack provider, customer, workspace, policy, usage, TSA, and billing management endpoints. It is unrelated to `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID`, which are not used by this terminal-first deploy flow.
+
+## Generate The Optional API Key, Private Key, And Public Key
 
 There is no hosted service that gives you these values. You create them.
 Use production key filenames for hosted deploys. The `dev-private.pem` and
@@ -129,9 +143,9 @@ This creates:
 | `.secrets/hosted/prod-private.pem` | production Ed25519 private key | `SKILLPACK_SIGNING_PRIVATE_KEY_PEM` |
 | `.secrets/hosted/prod-public.pem` | production Ed25519 public key | `SKILLPACK_SIGNING_PUBLIC_KEY_PEM` |
 
-The hosted API key is a random bearer secret. Whoever has it can call protected hosted API endpoints.
+In `clerk` mode, you may skip `.secrets/hosted/api-key.txt`. In `hybrid` mode, keep it if you want CLI/CI smoke checks or other automation to call management endpoints without minting a Clerk session token.
 
-The API Worker uses the key to decide whether a request is allowed to call protected hosted API endpoints. The dashboard Worker uses the key only when it needs to proxy an authenticated dashboard request to the API Worker.
+The API Worker uses the key only in `shared-key` or `hybrid` mode. The dashboard Worker uses the key only in `shared-key` mode, or as a fallback in `hybrid` mode when a Clerk bearer token is not present.
 
 The signing private key signs lease tokens. The signing public key verifies those tokens. The live API Worker and any bundle you use for the live direct-meter smoke must use the same key pair, or direct upload verification will fail.
 
@@ -154,7 +168,7 @@ The live `.mcpb` smoke needs a bundle signed with the same production private ke
 
 ## Set Production Secrets
 
-Set the same hosted API key value on both Workers:
+For `hybrid` or `shared-key`, set the same hosted API key value on both Workers:
 
 ```txt
 API Worker secret:
@@ -170,6 +184,7 @@ dashboard Worker secret:
 cd apps/api
 
 bunx wrangler secret put SKILLPACK_API_KEY < ../../.secrets/hosted/api-key.txt
+bunx wrangler secret put CLERK_SECRET_KEY
 bunx wrangler secret put SKILLPACK_SIGNING_PRIVATE_KEY_PEM < ../../.secrets/hosted/prod-private.pem
 bunx wrangler secret put SKILLPACK_SIGNING_PUBLIC_KEY_PEM < ../../.secrets/hosted/prod-public.pem
 ```
@@ -179,6 +194,7 @@ What each secret does:
 | Secret | Used by | Purpose |
 | --- | --- | --- |
 | `SKILLPACK_API_KEY` | API Worker | stores the hosted API key for protected API endpoints |
+| `CLERK_SECRET_KEY` | API Worker | verifies Clerk bearer tokens for protected API endpoints in `clerk` or `hybrid` mode |
 | `SKILLPACK_SIGNING_PRIVATE_KEY_PEM` | API Worker | signs issued lease tokens |
 | `SKILLPACK_SIGNING_PUBLIC_KEY_PEM` | API Worker | verifies signed lease and bundle flows |
 
@@ -196,11 +212,11 @@ What each secret does:
 
 | Secret | Used by | Purpose |
 | --- | --- | --- |
-| `SKILLPACK_API_KEY` | Dashboard Worker | stores the same hosted API key for dashboard-to-API proxy calls |
+| `SKILLPACK_API_KEY` | Dashboard Worker | stores the same hosted API key for shared-key proxy calls and hybrid fallback |
 | `CLERK_SECRET_KEY` | Dashboard Worker | verifies dashboard sessions server-side |
 | `CLERK_PUBLISHABLE_KEY` | Dashboard Worker | configures Clerk in the browser |
 
-The dashboard API key is required for dashboard operations that proxy to the hosted API, and for the live smoke tests in this runbook. It is not required for detached dashboard flows that only inspect local files, exported state, prepared artifacts, cached data, or operator-provided inputs in the browser.
+The dashboard API key is not required in `clerk` mode. The browser sends a Clerk session token to the dashboard proxy, and the dashboard forwards that bearer token to the API Worker. Detached dashboard flows that only inspect local files, exported state, prepared artifacts, cached data, or operator-provided inputs do not require the backend at all.
 
 Optional dashboard auth URLs can be added later as Worker vars if needed:
 
@@ -215,15 +231,64 @@ They are not required for the current smoke tests.
 
 This path deploys to Cloudflare remote Workers and remote D1. It is separate from
 local dev smoke, which uses `wrangler dev --local` and local D1 state only.
+Deployment is terminal-first: authenticate Wrangler locally with `bunx wrangler login`.
+Do not create or pass `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` for this flow.
+
+## After Merge Deployment Checklist
+
+After this PR is merged to `main`, deploy from a local terminal:
+
+```bash
+git checkout main
+git pull --ff-only origin main
+bun install
+bunx wrangler login
+
+export API_BASE_URL="https://skillpack-api.opensocialforall.workers.dev"
+export DASHBOARD_ORIGIN="https://skillpack-dashboard.opensocialforall.workers.dev"
+```
+
+Then follow the one-time secret setup below if any values are new or rotated, run
+the deploy wrapper, and run the live smoke command. For hosted deployments, keep
+`managementAuthMode` as `hybrid` unless you intentionally want `clerk` only or
+`shared-key` only.
 
 From repo root:
 
 ```bash
+bun install
+bunx wrangler login
+
 export API_BASE_URL="https://skillpack-api.opensocialforall.workers.dev"
 export DASHBOARD_ORIGIN="https://skillpack-dashboard.opensocialforall.workers.dev"
 
+# One-time, or whenever secrets rotate:
+(cd apps/api && bunx wrangler secret put SKILLPACK_API_KEY < ../../.secrets/hosted/api-key.txt)
+(cd apps/api && bunx wrangler secret put CLERK_SECRET_KEY)
+(cd apps/api && bunx wrangler secret put SKILLPACK_SIGNING_PRIVATE_KEY_PEM < ../../.secrets/hosted/prod-private.pem)
+(cd apps/api && bunx wrangler secret put SKILLPACK_SIGNING_PUBLIC_KEY_PEM < ../../.secrets/hosted/prod-public.pem)
+(cd apps/dashboard && bunx wrangler secret put SKILLPACK_API_KEY < ../../.secrets/hosted/api-key.txt)
+(cd apps/dashboard && bunx wrangler secret put CLERK_SECRET_KEY)
+(cd apps/dashboard && bunx wrangler secret put CLERK_PUBLISHABLE_KEY)
+
+# Deploy API + dashboard together with matching public bindings:
 bun scripts/deploy/deploy-hosted-control-plane.mjs \
-  '{"apiPublicBaseUrl":"'"$API_BASE_URL"'","dashboardPublicOrigin":"'"$DASHBOARD_ORIGIN"'"}'
+  '{"apiPublicBaseUrl":"'"$API_BASE_URL"'","dashboardPublicOrigin":"'"$DASHBOARD_ORIGIN"'","managementAuthMode":"hybrid"}'
+
+# Verify the live hosted pair:
+bun scripts/deploy/smoke-hosted-control-plane.mjs \
+  --api-base-url="$API_BASE_URL" \
+  --dashboard-base-url="$DASHBOARD_ORIGIN" \
+  --api-key="$(cat .secrets/hosted/api-key.txt)"
+```
+
+To verify a Clerk-only API deployment instead, pass a short-lived Clerk bearer token:
+
+```bash
+bun scripts/deploy/smoke-hosted-control-plane.mjs \
+  --api-base-url="$API_BASE_URL" \
+  --dashboard-base-url="$DASHBOARD_ORIGIN" \
+  --api-auth-header="Bearer <short-lived Clerk session token>"
 ```
 
 The deploy wrapper:
@@ -238,7 +303,7 @@ Generated Wrangler config files are temporary and are written beside each app's
 source `wrangler.jsonc` so relative entrypoints like `src/index.js` resolve from
 the app root. They are deleted after each deploy attempt.
 
-## Deploy From GitHub Actions
+## Optional GitHub Smoke After Terminal Deploy
 
 The workflow is:
 
@@ -246,30 +311,43 @@ The workflow is:
 .github/workflows/deploy-hosted-control-plane.yml
 ```
 
-Set these repository variables:
+This workflow does not deploy to Cloudflare. It verifies an already-deployed hosted
+pair after you deploy from a terminal with Wrangler.
+
+Set these repository variables if you want GitHub to run the smoke check:
 
 ```txt
 SKILLPACK_API_BASE_URL=https://skillpack-api.opensocialforall.workers.dev
 SKILLPACK_DASHBOARD_ORIGIN=https://skillpack-dashboard.opensocialforall.workers.dev
 ```
 
-Set these repository secrets:
+Set one of these repository secrets for API smoke auth:
 
 ```txt
-CLOUDFLARE_API_TOKEN
-CLOUDFLARE_ACCOUNT_ID
-SKILLPACK_API_KEY
+SKILLPACK_API_KEY=<same Skillpack management key stored in the Workers>
+SMOKE_API_AUTH_HEADER=Bearer <short-lived Clerk session token>
 ```
 
-Important: the workflow deploys Workers, but Worker runtime secrets must already exist in Cloudflare. Set the Worker secrets with `wrangler secret put` before relying on CI deploys.
+Optional repository secret for a live Clerk-authenticated dashboard proxy check:
+
+```txt
+SMOKE_DASHBOARD_AUTH_HEADER=Bearer <short-lived Clerk session token>
+```
+
+If `SMOKE_DASHBOARD_AUTH_HEADER` is absent, CI still verifies dashboard health,
+`/app-config`, and the full hosted API lifecycle through whichever API auth
+secret you configured. If it is present, the smoke runner also calls the
+dashboard proxy at `/api/v1/providers` with that auth header.
+
+The workflow runs `scripts/deploy/check-hosted-deploy-env.mjs` before smoke verification.
+If any required variable or API auth secret is missing, it fails with
+`hosted_deploy_missing_configuration:<names>`.
 
 Trigger manually:
 
 ```bash
 gh workflow run deploy-hosted-control-plane.yml
 ```
-
-Or push to `main`; the workflow also runs on `main` pushes.
 
 ## Live Smoke Test
 
@@ -282,6 +360,15 @@ bun scripts/deploy/smoke-hosted-control-plane.mjs \
   --api-key="<SKILLPACK_API_KEY>"
 ```
 
+For Clerk-only API auth:
+
+```bash
+bun scripts/deploy/smoke-hosted-control-plane.mjs \
+  --api-base-url="$API_BASE_URL" \
+  --dashboard-base-url="$DASHBOARD_ORIGIN" \
+  --api-auth-header="Bearer <short-lived Clerk session token>"
+```
+
 This checks:
 
 - API `/healthz`
@@ -289,12 +376,29 @@ This checks:
 - dashboard `/app-config`
 - dashboard API wiring
 - Clerk backend secret presence
-- hosted API key access
+- hosted API auth access by `SKILLPACK_API_KEY` or Clerk bearer token
+- provider/customer/workspace creation
+- policy issue
+- meter upload
+- usage summary
+- billing pricing-rule creation
+- billing invoice draft
+- dashboard proxy `/api/v1/providers` when `--dashboard-auth-header` is supplied
 
 Expected output:
 
 ```json
 { "ok": true }
+```
+
+To include the authenticated dashboard proxy check:
+
+```bash
+bun scripts/deploy/smoke-hosted-control-plane.mjs \
+  --api-base-url="$API_BASE_URL" \
+  --dashboard-base-url="$DASHBOARD_ORIGIN" \
+  --api-auth-header="Bearer <short-lived Clerk session token>" \
+  --dashboard-auth-header="Bearer <short-lived Clerk session token>"
 ```
 
 ## Live End-To-End Meter Test
@@ -392,6 +496,17 @@ SKILLPACK_API_KEY
 
 For the dashboard Worker, `SKILLPACK_API_KEY` should usually be the same hosted API key value.
 
+### `api_auth_header_failed:401`
+
+The Clerk bearer token passed to the smoke script was rejected by the API Worker.
+
+Check that:
+
+- the API Worker has `CLERK_SECRET_KEY` set
+- the deployed auth mode is `clerk` or `hybrid`
+- the bearer token is current and belongs to the same Clerk app
+- `SKILLPACK_DASHBOARD_ORIGIN` matches the origin authorized for the request
+
 ### `dashboard_config_missing_api_base_url`
 
 The dashboard deploy did not receive `SKILLPACK_API_BASE_URL`.
@@ -400,7 +515,7 @@ Deploy through:
 
 ```bash
 bun scripts/deploy/deploy-hosted-control-plane.mjs \
-  '{"apiPublicBaseUrl":"'"$API_BASE_URL"'","dashboardPublicOrigin":"'"$DASHBOARD_ORIGIN"'"}'
+  '{"apiPublicBaseUrl":"'"$API_BASE_URL"'","dashboardPublicOrigin":"'"$DASHBOARD_ORIGIN"'","managementAuthMode":"hybrid"}'
 ```
 
 Do not deploy `apps/dashboard` directly unless you manually provide the same vars.

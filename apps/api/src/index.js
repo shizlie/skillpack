@@ -1,3 +1,4 @@
+import { createClerkClient } from "@clerk/backend";
 import { Hono } from "hono";
 
 import {
@@ -8,18 +9,17 @@ import {
   createStripePaymentProvider,
 } from "@skillpack/core";
 
-const app = new Hono();
-
-// CF Worker env is a stable object per isolate lifetime (same reference for every request in the isolate).
-// WeakMap keyed on env gives us free per-isolate caching and correct test isolation (each test has its own env).
-const handlerCache = new WeakMap();
-
 function getEnvString(env, key) {
   const value = env?.[key];
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`worker_missing_env_${key}`);
   }
   return value;
+}
+
+function getOptionalEnvString(env, key) {
+  const value = env?.[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function getPemFromEnv(env, key) {
@@ -37,8 +37,96 @@ function getPemFromEnv(env, key) {
   throw new Error(`worker_missing_env_${key}`);
 }
 
-function getFetchHandler(env) {
-  if (handlerCache.has(env)) return handlerCache.get(env);
+function readApiKey(request) {
+  return request.headers.get("x-api-key") ?? request.headers.get("X-Api-Key");
+}
+
+async function isValidSharedManagementKey(request, managementApiKey) {
+  const providedApiKey = readApiKey(request);
+  if (typeof providedApiKey !== "string" || typeof managementApiKey !== "string") {
+    return false;
+  }
+  const encoder = new TextEncoder();
+  const [providedHash, expectedHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(providedApiKey)),
+    crypto.subtle.digest("SHA-256", encoder.encode(managementApiKey)),
+  ]);
+  const providedBytes = new Uint8Array(providedHash);
+  const expectedBytes = new Uint8Array(expectedHash);
+  let diff = providedBytes.length ^ expectedBytes.length;
+  for (let i = 0; i < providedBytes.length && i < expectedBytes.length; i += 1) {
+    diff |= providedBytes[i] ^ expectedBytes[i];
+  }
+  return diff === 0;
+}
+
+function getManagementAuthMode(env) {
+  const mode = env?.SKILLPACK_MANAGEMENT_AUTH_MODE ?? "shared-key";
+  if (mode === "shared-key" || mode === "clerk" || mode === "hybrid") {
+    return mode;
+  }
+  throw new Error("worker_invalid_management_auth_mode");
+}
+
+function getClerkAuthorizedParties(env) {
+  const dashboardOrigin = getOptionalEnvString(env, "SKILLPACK_DASHBOARD_ORIGIN");
+  return dashboardOrigin ? [dashboardOrigin] : undefined;
+}
+
+function getClerkClient(env, { clerkClientCache, createClerkClientImpl }) {
+  if (clerkClientCache.has(env)) return clerkClientCache.get(env);
+
+  const secretKey = getEnvString(env, "CLERK_SECRET_KEY");
+  const publishableKey = getOptionalEnvString(env, "CLERK_PUBLISHABLE_KEY");
+  const clerkClient = createClerkClientImpl({
+    secretKey,
+    ...(publishableKey ? { publishableKey } : {}),
+  });
+  clerkClientCache.set(env, clerkClient);
+  return clerkClient;
+}
+
+async function authenticateClerkManagementRequest(request, env, workerOptions) {
+  const clerkClient = getClerkClient(env, workerOptions);
+  const authorizedParties = getClerkAuthorizedParties(env);
+  const state = await clerkClient.authenticateRequest(request, {
+    ...(authorizedParties ? { authorizedParties } : {}),
+  });
+  return state.isAuthenticated === true && Boolean(state.toAuth()?.userId);
+}
+
+function createManagementAuthOptions(env, workerOptions) {
+  const mode = getManagementAuthMode(env);
+  if (mode === "shared-key") {
+    return {
+      managementApiKey: getEnvString(env, "SKILLPACK_API_KEY"),
+      managementAuthenticator: null,
+    };
+  }
+  if (mode === "clerk") {
+    return {
+      managementApiKey: null,
+      managementAuthenticator: (request) =>
+        authenticateClerkManagementRequest(request, env, workerOptions),
+    };
+  }
+  const managementApiKey = getOptionalEnvString(env, "SKILLPACK_API_KEY");
+  return {
+    managementApiKey: null,
+    managementAuthenticator: async (request) => {
+      if (
+        managementApiKey &&
+        (await isValidSharedManagementKey(request, managementApiKey))
+      ) {
+        return true;
+      }
+      return authenticateClerkManagementRequest(request, env, workerOptions);
+    },
+  };
+}
+
+function getFetchHandler(env, workerOptions) {
+  if (workerOptions.handlerCache.has(env)) return workerOptions.handlerCache.get(env);
 
   const db = env?.DB;
   if (!db || typeof db.prepare !== "function") {
@@ -61,12 +149,12 @@ function getFetchHandler(env) {
   const handler = createLicenseFetchHandler({
     signingPrivateKeyPem: getPemFromEnv(env, "SKILLPACK_SIGNING_PRIVATE_KEY_PEM"),
     signingPublicKeyPem: getPemFromEnv(env, "SKILLPACK_SIGNING_PUBLIC_KEY_PEM"),
-    managementApiKey: getEnvString(env, "SKILLPACK_API_KEY"),
+    ...createManagementAuthOptions(env, workerOptions),
     leaseStore: createD1LeaseStore({ db }),
     paymentProviders: createPaymentProviderRegistry({ providers: paymentAdapters }),
   });
 
-  handlerCache.set(env, handler);
+  workerOptions.handlerCache.set(env, handler);
   return handler;
 }
 
@@ -91,7 +179,7 @@ function withCors(response, request, env) {
   headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
   headers.set(
     "access-control-allow-headers",
-    "content-type, x-api-key, x-skillpack-lease-token"
+    "authorization, content-type, x-api-key, x-skillpack-lease-token"
   );
   headers.set("access-control-max-age", "86400");
   headers.set("vary", "Origin");
@@ -102,9 +190,9 @@ function withCors(response, request, env) {
   });
 }
 
-async function delegateApi(c) {
+async function delegateApi(c, workerOptions) {
   try {
-    const fetchHandler = getFetchHandler(c.env);
+    const fetchHandler = getFetchHandler(c.env, workerOptions);
     const response = await fetchHandler(c.req.raw);
     return withCors(response, c.req.raw, c.env);
   } catch (error) {
@@ -121,15 +209,26 @@ async function delegateApi(c) {
   }
 }
 
-app.options("/v1/*", (c) =>
-  withCors(new Response(null, { status: 204 }), c.req.raw, c.env)
-);
+export function createApiWorker({ createClerkClientImpl = createClerkClient } = {}) {
+  const app = new Hono();
+  const workerOptions = {
+    clerkClientCache: new WeakMap(),
+    createClerkClientImpl,
+    handlerCache: new WeakMap(),
+  };
 
-app.get("/healthz", delegateApi);
-app.all("/v1/*", delegateApi);
+  app.options("/v1/*", (c) =>
+    withCors(new Response(null, { status: 204 }), c.req.raw, c.env)
+  );
 
-app.all("*", () => json({ error: "not_found" }, 404));
+  app.get("/healthz", (c) => delegateApi(c, workerOptions));
+  app.all("/v1/*", (c) => delegateApi(c, workerOptions));
 
-export default {
-  fetch: app.fetch,
-};
+  app.all("*", () => json({ error: "not_found" }, 404));
+
+  return {
+    fetch: app.fetch,
+  };
+}
+
+export default createApiWorker();

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 
 import { generateEd25519KeyPair } from "@skillpack/crypto";
-import worker from "../src/index.js";
+import worker, { createApiWorker } from "../src/index.js";
 
 function createTestD1Database() {
   const sqlite = new Database(":memory:");
@@ -508,6 +508,93 @@ test("worker: meter upload with x-skillpack-lease-token ignores client context a
       totalCalls: 2,
     },
   ]);
+
+  env.DB.close();
+});
+
+test("worker: clerk management auth accepts bearer tokens without api key", async () => {
+  const keys = generateEd25519KeyPair();
+  const worker = createApiWorker({
+    createClerkClientImpl: () => ({
+      authenticateRequest: async (request) => ({
+        isAuthenticated: request.headers.get("authorization") === "Bearer clerk-ok",
+        toAuth: () => ({ userId: "user_1" }),
+      }),
+    }),
+  });
+  const env = {
+    DB: createTestD1Database(),
+    SKILLPACK_MANAGEMENT_AUTH_MODE: "clerk",
+    CLERK_SECRET_KEY: "sk_test_dummy_secret_key",
+    SKILLPACK_SIGNING_PRIVATE_KEY_PEM: keys.privateKeyPem,
+    SKILLPACK_SIGNING_PUBLIC_KEY_PEM: keys.publicKeyPem,
+    SKILLPACK_DASHBOARD_ORIGIN: "https://dashboard.skillpack.example",
+  };
+
+  const unauthorized = await worker.fetch(
+    new Request("http://local/v1/providers", {
+      method: "GET",
+      headers: { authorization: "Bearer wrong" },
+    }),
+    env
+  );
+  expect(unauthorized.status).toBe(401);
+  expect(await unauthorized.json()).toEqual({ error: "unauthorized" });
+
+  const authorized = await worker.fetch(
+    new Request("http://local/v1/providers", {
+      method: "GET",
+      headers: {
+        authorization: "Bearer clerk-ok",
+        origin: "https://dashboard.skillpack.example",
+      },
+    }),
+    env
+  );
+  expect(authorized.status).toBe(200);
+  expect(await authorized.json()).toEqual({ providers: [] });
+  expect(authorized.headers.get("access-control-allow-headers")).toContain("authorization");
+
+  env.DB.close();
+});
+
+test("worker: hybrid management auth accepts api key or clerk bearer token", async () => {
+  const keys = generateEd25519KeyPair();
+  const worker = createApiWorker({
+    createClerkClientImpl: () => ({
+      authenticateRequest: async (request) => ({
+        isAuthenticated: request.headers.get("authorization") === "Bearer clerk-ok",
+        toAuth: () => ({ userId: "user_1" }),
+      }),
+    }),
+  });
+  const env = {
+    DB: createTestD1Database(),
+    SKILLPACK_MANAGEMENT_AUTH_MODE: "hybrid",
+    SKILLPACK_API_KEY: "mgmt-key",
+    CLERK_SECRET_KEY: "sk_test_dummy_secret_key",
+    SKILLPACK_SIGNING_PRIVATE_KEY_PEM: keys.privateKeyPem,
+    SKILLPACK_SIGNING_PUBLIC_KEY_PEM: keys.publicKeyPem,
+    SKILLPACK_DASHBOARD_ORIGIN: "https://dashboard.skillpack.example",
+  };
+
+  const keyRes = await worker.fetch(
+    new Request("http://local/v1/providers", {
+      method: "GET",
+      headers: { "x-api-key": "mgmt-key" },
+    }),
+    env
+  );
+  expect(keyRes.status).toBe(200);
+
+  const clerkRes = await worker.fetch(
+    new Request("http://local/v1/providers", {
+      method: "GET",
+      headers: { authorization: "Bearer clerk-ok" },
+    }),
+    env
+  );
+  expect(clerkRes.status).toBe(200);
 
   env.DB.close();
 });
