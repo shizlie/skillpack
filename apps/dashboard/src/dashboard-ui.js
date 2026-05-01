@@ -57,6 +57,8 @@ export function renderDashboardHtml() {
           <article><span>Customers</span><strong id="metric-customers">0</strong></article>
           <article><span>Workspaces</span><strong id="metric-workspaces">0</strong></article>
           <article><span>Usage Rows</span><strong id="metric-usage">0</strong></article>
+          <article><span>Pricing Rules</span><strong id="metric-pricing-rules">0</strong></article>
+          <article><span>Invoices</span><strong id="metric-invoices">0</strong></article>
         </section>
 
         <div class="grid">
@@ -193,6 +195,100 @@ export function renderDashboardHtml() {
             </div>
 
             <pre id="usage-output" class="output">Usage responses will appear here.</pre>
+          </section>
+
+          <section class="card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Billing</p>
+                <h2>Pricing rules and invoice handoffs</h2>
+              </div>
+              <button type="button" class="ghost" id="refresh-billing">Refresh</button>
+            </div>
+
+            <form id="billing-pricing-rule-form" class="form-grid">
+              <label><span>Rule ID</span><input name="pricingRuleId" required placeholder="price-search" /></label>
+              <label><span>Provider</span><select name="providerId" id="billing-rule-provider"></select></label>
+              <label><span>Customer</span><select name="customerId" id="billing-rule-customer"></select></label>
+              <label><span>Workspace</span><select name="workspaceId" id="billing-rule-workspace"></select></label>
+              <label><span>Skill ID</span><input name="skillId" placeholder="laws-consultant" /></label>
+              <label><span>Bundle ID</span><input name="bundleId" placeholder="laws-consultant-1.0.0" /></label>
+              <label><span>Tool</span><input name="tool" placeholder="wiki_search" /></label>
+              <label><span>Currency</span><input name="currency" required value="USD" /></label>
+              <label><span>Unit cents</span><input name="unitAmountCents" type="number" min="0" required value="25" /></label>
+              <label><span>Included units</span><input name="includedUnits" type="number" min="0" value="0" /></label>
+              <label><span>Minimum cents</span><input name="minimumAmountCents" type="number" min="0" value="0" /></label>
+              <label>
+                <span>Payment</span>
+                <select name="paymentProvider">
+                  <option value="manual">manual</option>
+                  <option value="dodo">dodo</option>
+                  <option value="stripe">stripe</option>
+                </select>
+              </label>
+              <label><span>Dodo product</span><input name="productId" placeholder="prod_..." /></label>
+              <label><span>Stripe price</span><input name="priceId" placeholder="price_..." /></label>
+              <button type="submit">Create price</button>
+            </form>
+
+            <form id="billing-invoice-draft-form" class="form-grid compact">
+              <label><span>Invoice ID</span><input name="invoiceId" placeholder="auto" /></label>
+              <label><span>Provider</span><select name="providerId" id="billing-invoice-provider"></select></label>
+              <label><span>Customer</span><select name="customerId" id="billing-invoice-customer"></select></label>
+              <label><span>Workspace</span><select name="workspaceId" id="billing-invoice-workspace"></select></label>
+              <label><span>Period start</span><input name="periodStart" type="datetime-local" /></label>
+              <label><span>Period end</span><input name="periodEnd" type="datetime-local" /></label>
+              <label><span>Currency</span><input name="currency" placeholder="rule default" /></label>
+              <button type="submit">Draft invoice</button>
+            </form>
+
+            <form id="billing-payment-handoff-form" class="form-grid compact">
+              <label><span>Invoice</span><select name="invoiceId" id="billing-handoff-invoice"></select></label>
+              <label>
+                <span>Provider</span>
+                <select name="provider">
+                  <option value="manual">manual</option>
+                  <option value="dodo">dodo</option>
+                  <option value="stripe">stripe</option>
+                </select>
+              </label>
+              <label><span>Return URL</span><input name="returnUrl" placeholder="https://vendor.example/paid" /></label>
+              <label><span>Customer email</span><input name="customerEmail" type="email" placeholder="ops@example.com" /></label>
+              <label><span>Customer name</span><input name="customerName" placeholder="Ops Lead" /></label>
+              <button type="submit">Create handoff</button>
+            </form>
+
+            <div class="triptych">
+              <div>
+                <h3>Pricing rules</h3>
+                <ul id="pricing-rules-list" class="entity-list"></ul>
+              </div>
+              <div>
+                <h3>Invoices</h3>
+                <ul id="invoices-list" class="entity-list"></ul>
+              </div>
+              <div>
+                <h3>Latest handoffs</h3>
+                <ul id="handoffs-list" class="entity-list"></ul>
+              </div>
+            </div>
+
+            <div class="table-shell">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Invoice</th>
+                    <th>Customer</th>
+                    <th>Status</th>
+                    <th>Period</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody id="invoices-body"></tbody>
+              </table>
+            </div>
+
+            <pre id="billing-output" class="output">Billing responses will appear here.</pre>
           </section>
 
           <section class="card">
@@ -515,6 +611,9 @@ const state = {
   customers: [],
   workspaces: [],
   usage: [],
+  pricingRules: [],
+  invoices: [],
+  paymentHandoffs: [],
   attestations: [],
   clerkLoaded: false,
 };
@@ -555,12 +654,45 @@ function toLocalValue(ms) {
   return yyyy + "-" + mm + "-" + dd + "T" + hh + ":" + min;
 }
 
+function formString(formData, key) {
+  return String(formData.get(key) || "").trim();
+}
+
+function optionalFormString(formData, key) {
+  const value = formString(formData, key);
+  return value.length > 0 ? value : undefined;
+}
+
+function formNumber(formData, key, fallback = 0) {
+  const value = Number(formData.get(key));
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function optionalFormNumber(formData, key) {
+  const raw = formString(formData, key);
+  if (!raw) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function dateRangeLabel(startSec, endSec) {
+  if (!startSec || !endSec) return "unknown period";
+  return new Date(startSec * 1000).toLocaleDateString() + " - " + new Date(endSec * 1000).toLocaleDateString();
+}
+
+function formatMoneyCents(cents, currency = "USD") {
+  const amount = Number(cents || 0) / 100;
+  return currency + " " + amount.toFixed(2);
+}
+
 function setDefaultTimes() {
   const now = Date.now();
   $("#policy-issue-form").elements.startsAt.value = toLocalValue(now);
   $("#policy-issue-form").elements.expiresAt.value = toLocalValue(now + 24 * 60 * 60 * 1000);
   $("#policy-issue-form").elements.graceUntil.value = toLocalValue(now + 72 * 60 * 60 * 1000);
   $("#tsa-form").elements.attestedAt.value = toLocalValue(now);
+  $("#billing-invoice-draft-form").elements.periodStart.value = toLocalValue(now - 30 * 24 * 60 * 60 * 1000);
+  $("#billing-invoice-draft-form").elements.periodEnd.value = toLocalValue(now);
 }
 
 async function loadConfig() {
@@ -678,6 +810,8 @@ function setMetrics() {
   $("#metric-customers").textContent = String(state.customers.length);
   $("#metric-workspaces").textContent = String(state.workspaces.length);
   $("#metric-usage").textContent = String(state.usage.length);
+  $("#metric-pricing-rules").textContent = String(state.pricingRules.length);
+  $("#metric-invoices").textContent = String(state.invoices.length);
 }
 
 function syncSelect(node, items, valueKey, label, placeholder) {
@@ -702,6 +836,21 @@ function syncSelect(node, items, valueKey, label, placeholder) {
   }
 }
 
+function syncOptionalSelect(node, items, valueKey, label, placeholder) {
+  if (!node) return;
+  const previous = node.value;
+  const options = ['<option value="">' + escapeHtml(placeholder) + "</option>"];
+  for (const item of items) {
+    options.push(
+      '<option value="' + escapeHtml(item[valueKey]) + '">' +
+      escapeHtml(label(item)) +
+      "</option>"
+    );
+  }
+  node.innerHTML = options.join("");
+  node.value = items.some((item) => item[valueKey] === previous) ? previous : "";
+}
+
 function refreshWorkspaceCustomerOptions() {
   const providerId = $("#workspace-provider").value;
   const customers = state.customers.filter((customer) => !providerId || customer.providerId === providerId);
@@ -711,6 +860,63 @@ function refreshWorkspaceCustomerOptions() {
     "customerId",
     (customer) => customer.customerId,
     "Create customer first"
+  );
+}
+
+function customersForProvider(providerId) {
+  return state.customers.filter((customer) => !providerId || customer.providerId === providerId);
+}
+
+function workspacesForProviderCustomer(providerId, customerId) {
+  return state.workspaces.filter(
+    (workspace) =>
+      (!providerId || workspace.providerId === providerId) &&
+      (!customerId || workspace.customerId === customerId)
+  );
+}
+
+function refreshBillingCustomerOptions(prefix) {
+  const providerId = $("#billing-" + prefix + "-provider").value;
+  const sync = prefix === "rule" ? syncOptionalSelect : syncSelect;
+  sync(
+    $("#billing-" + prefix + "-customer"),
+    customersForProvider(providerId),
+    "customerId",
+    (customer) => customer.customerId,
+    prefix === "rule" ? "Any customer" : "Create customer first"
+  );
+}
+
+function refreshBillingWorkspaceOptions(prefix) {
+  const providerId = $("#billing-" + prefix + "-provider").value;
+  const customerId = $("#billing-" + prefix + "-customer").value;
+  syncOptionalSelect(
+    $("#billing-" + prefix + "-workspace"),
+    workspacesForProviderCustomer(providerId, customerId),
+    "workspaceId",
+    (workspace) => workspace.workspaceId,
+    "Any workspace"
+  );
+}
+
+function refreshBillingSelectOptions() {
+  for (const prefix of ["rule", "invoice"]) {
+    syncSelect(
+      $("#billing-" + prefix + "-provider"),
+      state.providers,
+      "providerId",
+      (provider) => provider.providerId,
+      "Create provider first"
+    );
+    refreshBillingCustomerOptions(prefix);
+    refreshBillingWorkspaceOptions(prefix);
+  }
+  syncSelect(
+    $("#billing-handoff-invoice"),
+    state.invoices,
+    "invoiceId",
+    (invoice) => invoice.invoiceId + " · " + formatMoneyCents(invoice.totalAmountCents, invoice.currency),
+    "Draft invoice first"
   );
 }
 
@@ -727,6 +933,7 @@ function renderHierarchy() {
   syncSelect($("#customer-provider"), state.providers, "providerId", (provider) => provider.providerId, "Create provider first");
   syncSelect($("#workspace-provider"), state.providers, "providerId", (provider) => provider.providerId, "Create provider first");
   refreshWorkspaceCustomerOptions();
+  refreshBillingSelectOptions();
   setMetrics();
 }
 
@@ -741,6 +948,27 @@ function renderAttestations() {
   $("#attestations-body").innerHTML = state.attestations.length
     ? state.attestations.map((row) => "<tr><td>" + escapeHtml(row.customerId) + "</td><td>" + escapeHtml(row.seatId || "default") + "</td><td>" + escapeHtml(row.operatorId) + "</td><td>" + escapeHtml(row.ticketId) + "</td><td>" + escapeHtml(new Date(row.recordedAtSec * 1000).toLocaleString()) + "</td><td>" + escapeHtml(row.reason) + "</td></tr>").join("")
     : '<tr><td colspan="6">No manual attestations.</td></tr>';
+}
+
+function renderBilling() {
+  $("#pricing-rules-list").innerHTML = state.pricingRules.length
+    ? state.pricingRules.map((rule) => "<li><strong>" + escapeHtml(rule.pricingRuleId) + "</strong><span>" + escapeHtml(rule.providerId + " / " + (rule.customerId || "any customer") + " / " + (rule.tool || "any tool") + " / " + formatMoneyCents(rule.unitAmountCents, rule.currency)) + "</span></li>").join("")
+    : "<li>No pricing rules yet.</li>";
+
+  $("#invoices-list").innerHTML = state.invoices.length
+    ? state.invoices.map((invoice) => "<li><strong>" + escapeHtml(invoice.invoiceId) + "</strong><span>" + escapeHtml(invoice.customerId + " / " + invoice.status + " / " + formatMoneyCents(invoice.totalAmountCents, invoice.currency)) + "</span></li>").join("")
+    : "<li>No draft invoices yet.</li>";
+
+  $("#handoffs-list").innerHTML = state.paymentHandoffs.length
+    ? state.paymentHandoffs.slice(-5).reverse().map((handoff) => "<li><strong>" + escapeHtml(handoff.provider) + "</strong><span>" + escapeHtml(handoff.invoiceId + " / " + handoff.status + (handoff.checkoutUrl ? " / " + handoff.checkoutUrl : "")) + "</span></li>").join("")
+    : "<li>No handoffs created in this session.</li>";
+
+  $("#invoices-body").innerHTML = state.invoices.length
+    ? state.invoices.map((invoice) => "<tr><td>" + escapeHtml(invoice.invoiceId) + "</td><td>" + escapeHtml(invoice.customerId) + "</td><td>" + escapeHtml(invoice.status) + "</td><td>" + escapeHtml(dateRangeLabel(invoice.periodStartSec, invoice.periodEndSec)) + "</td><td>" + escapeHtml(formatMoneyCents(invoice.totalAmountCents, invoice.currency)) + "</td></tr>").join("")
+    : '<tr><td colspan="5">No invoices drafted yet.</td></tr>';
+
+  refreshBillingSelectOptions();
+  setMetrics();
 }
 
 async function refreshHierarchy() {
@@ -785,9 +1013,22 @@ async function refreshAttestations(form = $("#attestation-filter-form")) {
   setOutput("#tsa-output", response);
 }
 
+async function refreshBilling() {
+  const pricingRules = await proxyFetch("/v1/billing/pricing-rules");
+  state.pricingRules = pricingRules.pricingRules || [];
+  const invoices = await proxyFetch("/v1/billing/invoices");
+  state.invoices = invoices.invoices || [];
+  renderBilling();
+  setOutput("#billing-output", {
+    pricingRules: state.pricingRules.length,
+    invoices: state.invoices.length,
+  });
+}
+
 async function refreshAll() {
   await refreshHierarchy();
   await refreshUsage();
+  await refreshBilling();
   await refreshAttestations();
 }
 
@@ -933,6 +1174,85 @@ async function handleMeterUpload(event) {
   await refreshUsage();
 }
 
+async function handleBillingPricingRuleSubmit(event) {
+  event.preventDefault();
+  const formData = new FormData(event.currentTarget);
+  const paymentProvider = {
+    provider: formString(formData, "paymentProvider") || "manual",
+    productId: optionalFormString(formData, "productId"),
+    priceId: optionalFormString(formData, "priceId"),
+  };
+  const response = await proxyFetch("/v1/billing/pricing-rules", {
+    method: "POST",
+    body: {
+      pricingRuleId: formString(formData, "pricingRuleId"),
+      providerId: formString(formData, "providerId"),
+      customerId: optionalFormString(formData, "customerId"),
+      workspaceId: optionalFormString(formData, "workspaceId"),
+      skillId: optionalFormString(formData, "skillId"),
+      bundleId: optionalFormString(formData, "bundleId"),
+      tool: optionalFormString(formData, "tool"),
+      currency: formString(formData, "currency") || "USD",
+      unitAmountCents: formNumber(formData, "unitAmountCents"),
+      includedUnits: optionalFormNumber(formData, "includedUnits"),
+      minimumAmountCents: optionalFormNumber(formData, "minimumAmountCents"),
+      paymentProvider,
+    },
+  });
+  setOutput("#billing-output", response);
+  event.currentTarget.reset();
+  event.currentTarget.elements.currency.value = "USD";
+  event.currentTarget.elements.unitAmountCents.value = "25";
+  event.currentTarget.elements.includedUnits.value = "0";
+  event.currentTarget.elements.minimumAmountCents.value = "0";
+  await refreshBilling();
+}
+
+async function handleBillingInvoiceDraft(event) {
+  event.preventDefault();
+  const formData = new FormData(event.currentTarget);
+  const response = await proxyFetch("/v1/billing/invoices/draft", {
+    method: "POST",
+    body: {
+      invoiceId: optionalFormString(formData, "invoiceId"),
+      providerId: formString(formData, "providerId"),
+      customerId: formString(formData, "customerId"),
+      workspaceId: optionalFormString(formData, "workspaceId"),
+      periodStartSec: toEpochSec(formString(formData, "periodStart")),
+      periodEndSec: toEpochSec(formString(formData, "periodEnd")),
+      currency: optionalFormString(formData, "currency"),
+    },
+  });
+  setOutput("#billing-output", response);
+  await refreshBilling();
+}
+
+async function handleBillingPaymentHandoff(event) {
+  event.preventDefault();
+  const formData = new FormData(event.currentTarget);
+  const invoiceId = formString(formData, "invoiceId");
+  const customer =
+    optionalFormString(formData, "customerEmail") || optionalFormString(formData, "customerName")
+      ? {
+          email: optionalFormString(formData, "customerEmail"),
+          name: optionalFormString(formData, "customerName"),
+        }
+      : undefined;
+  const response = await proxyFetch("/v1/billing/invoices/" + encodeURIComponent(invoiceId) + "/payment-handoff", {
+    method: "POST",
+    body: {
+      provider: formString(formData, "provider") || "manual",
+      returnUrl: optionalFormString(formData, "returnUrl"),
+      customer,
+    },
+  });
+  if (response.paymentHandoff) {
+    state.paymentHandoffs.push(response.paymentHandoff);
+  }
+  renderBilling();
+  setOutput("#billing-output", response);
+}
+
 async function handleTsaSubmit(event) {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
@@ -981,10 +1301,23 @@ async function bootstrap() {
   $("#refresh-usage").addEventListener("click", () => {
     refreshUsage().catch((error) => setOutput("#usage-output", { error: error.message }, true));
   });
+  $("#refresh-billing").addEventListener("click", () => {
+    refreshBilling().catch((error) => setOutput("#billing-output", { error: error.message }, true));
+  });
   $("#refresh-attestations").addEventListener("click", () => {
     refreshAttestations().catch((error) => setOutput("#tsa-output", { error: error.message }, true));
   });
   $("#workspace-provider").addEventListener("change", refreshWorkspaceCustomerOptions);
+  $("#billing-rule-provider").addEventListener("change", () => {
+    refreshBillingCustomerOptions("rule");
+    refreshBillingWorkspaceOptions("rule");
+  });
+  $("#billing-rule-customer").addEventListener("change", () => refreshBillingWorkspaceOptions("rule"));
+  $("#billing-invoice-provider").addEventListener("change", () => {
+    refreshBillingCustomerOptions("invoice");
+    refreshBillingWorkspaceOptions("invoice");
+  });
+  $("#billing-invoice-customer").addEventListener("change", () => refreshBillingWorkspaceOptions("invoice"));
 
   bindAsyncForm("#provider-form", handleProviderSubmit, "#policy-output");
   bindAsyncForm("#customer-form", handleCustomerSubmit, "#policy-output");
@@ -992,6 +1325,9 @@ async function bootstrap() {
   bindAsyncForm("#policy-issue-form", handlePolicyIssue, "#policy-output");
   bindAsyncForm("#policy-sync-form", handlePolicySync, "#policy-output");
   bindAsyncForm("#meter-upload-form", handleMeterUpload, "#usage-output");
+  bindAsyncForm("#billing-pricing-rule-form", handleBillingPricingRuleSubmit, "#billing-output");
+  bindAsyncForm("#billing-invoice-draft-form", handleBillingInvoiceDraft, "#billing-output");
+  bindAsyncForm("#billing-payment-handoff-form", handleBillingPaymentHandoff, "#billing-output");
   bindAsyncForm("#tsa-form", handleTsaSubmit, "#tsa-output");
 
   $("#usage-filter-form").addEventListener("submit", (event) => {
