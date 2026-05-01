@@ -7,6 +7,7 @@ import {
   verifyMeterChain,
 } from "@skillpack/crypto";
 import {
+  buildTsaPolicyFromLeaseResponse,
   createRuntimeMeter,
   executeWithRuntimeLease,
   verifyLeaseForRuntime,
@@ -120,6 +121,32 @@ test("runtime TSA policy: accepts fresh manual attestation for expired token", (
   expect(out.mode).toBe("grace");
   expect(out.tsa.status).toBe("expired");
   expect(out.tsa.manualAttestationUsed).toBe(true);
+});
+
+test("buildTsaPolicyFromLeaseResponse hydrates manual attestation with 4h default", () => {
+  const attestation = {
+    operatorId: "op-1",
+    ticketId: "INC-1",
+    reason: "Validated trusted wall-clock during upstream TSA outage",
+    attestedAtSec: 1_800_000_000,
+    recordedAtSec: 1_800_000_001,
+    source: "manual-time-attestation",
+  };
+  const policy = buildTsaPolicyFromLeaseResponse({
+    tsaState: {
+      status: "expired",
+      ageSec: 700_000,
+      expiresInSec: -95_200,
+      lastTsaTokenAtSec: 1_799_300_000,
+      latestManualAttestation: attestation,
+    },
+  });
+  expect(policy).toEqual({
+    lastTsaTokenAtSec: 1_799_300_000,
+    manualAttestation: attestation,
+    maxManualAttestationAgeSec: 4 * 60 * 60,
+  });
+  expect(buildTsaPolicyFromLeaseResponse({ tsaState: null })).toBeNull();
 });
 
 test("direct upload transport uses node built-ins and leaves spool intact on failure", async () => {

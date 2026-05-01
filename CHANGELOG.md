@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [0.6.2.0] - 2026-05-01
+
+### Added
+
+- Server-backed `skillpack license issue` support for hosted lease issuance, including TSA outage hints and ticket-scoped manual attestation embedding.
+- Runtime `buildTsaPolicyFromLeaseResponse` helper so receivers can hydrate TSA policy directly from lease issue responses.
+
+### Changed
+
+- TSA outage continuity now uses a 4-hour default manual attestation window and ticket-scoped lookups instead of requiring runtime-side manual injection.
+- TSA outage runbook and project docs now describe the reduced Autoplan scope and server-backed reissue flow.
+
+### Fixed
+
+- SQLite and D1 workspace upserts now reject provider/customer identity changes atomically, closing the `workspace_identity_mismatch` race window.
+- `latest-attestation` and lease reissue flows now respect incident ticket IDs so stale attestations from older incidents are not reused.
+
 ## [0.6.1.0] - 2026-05-01
 
 ### Added

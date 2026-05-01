@@ -352,11 +352,16 @@ Run locally:
 
 For air-gapped customers where TSA freshness passes max age and no sneakernet token is available:
 
-1. Operator submits a manual attestation to the license server:
+1. `skillpack license issue` surfaces TSA warning/expired state on stderr while keeping lease JSON on stdout.
+2. Operator submits a ticket-scoped manual attestation to the license server:
    `skillpack tsa manual-attest --server-url <url> --customer-id <id> --seat-id <id> --operator-id <id> --ticket-id <id> --reason "<incident note>" --attested-at-sec <unix-sec>`
-2. Runtime must enforce TSA policy with this attestation record when token freshness is expired.
-3. Operator can retrieve the latest stored attestation for a customer/seat:
-   `skillpack tsa latest-attestation --server-url <url> --customer-id <id> --seat-id <id>`
+3. The next server-backed lease issue call with the same ticket embeds `tsaState.latestManualAttestation`:
+   `skillpack license issue --server-url <url> --api-key <key> --customer-id <id> --seat-id <id> --last-tsa-token-at-sec <unix-sec> --tsa-ticket-id <ticketId>`
+4. Runtime calls `buildTsaPolicyFromLeaseResponse(response)` and enforces the ticket-scoped attestation when TSA freshness is expired.
+5. Operator can retrieve the latest stored attestation for a customer/seat/ticket:
+   `skillpack tsa latest-attestation --server-url <url> --customer-id <id> --seat-id <id> --ticket-id <id>`
+
+The default manual attestation validity window is 4 hours. Structured incident timeline export is deferred until a design partner specifies the audit format.
 
 Storage integration:
 

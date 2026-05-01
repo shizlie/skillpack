@@ -10,7 +10,7 @@ import {
 export { createRuntimeMeter } from "./runtime-meter.mjs";
 
 const DEFAULT_GRACE_SEC = 72 * 60 * 60;
-const DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC = 24 * 60 * 60;
+export const DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC = 4 * 60 * 60;
 
 function decodeLeaseParts(leaseToken) {
   const parts = leaseToken.split(".");
@@ -95,6 +95,20 @@ export function verifyLeaseForRuntime({
   }
 
   return { mode, payload, tsa: { ...tsaState, manualAttestationUsed } };
+}
+
+export function buildTsaPolicyFromLeaseResponse(response) {
+  const tsaState = response?.tsaState;
+  if (!tsaState) return null;
+  return {
+    lastTsaTokenAtSec: tsaState.lastTsaTokenAtSec,
+    maxTokenAgeSec: tsaState.maxTokenAgeSec,
+    warningWindowSec: tsaState.warningWindowSec,
+    manualAttestation: tsaState.latestManualAttestation ?? null,
+    maxManualAttestationAgeSec:
+      tsaState.maxManualAttestationAgeSec ??
+      DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC,
+  };
 }
 
 export async function executeWithRuntimeLease({

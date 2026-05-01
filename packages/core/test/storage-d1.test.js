@@ -131,6 +131,36 @@ test("d1 listManualAttestations: undefined filter treated as no-filter", async (
   expect(rows.length).toBe(3);
 });
 
+test("d1 getLatestManualAttestation: can scope by ticketId", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+  await store.addManualAttestation({
+    customerId: "cust-ticket",
+    seatId: "seat-1",
+    operatorId: "op-1",
+    ticketId: "INC-1",
+    reason: "reason-one",
+    attestedAtSec: 1_000,
+    recordedAtSec: 1_001,
+    source: "manual",
+  });
+  await store.addManualAttestation({
+    customerId: "cust-ticket",
+    seatId: "seat-1",
+    operatorId: "op-2",
+    ticketId: "INC-2",
+    reason: "reason-two",
+    attestedAtSec: 2_000,
+    recordedAtSec: 2_001,
+    source: "manual",
+  });
+
+  const latest = await store.getLatestManualAttestation("cust-ticket", "seat-1", {
+    ticketId: "INC-1",
+  });
+  expect(latest.ticketId).toBe("INC-1");
+});
+
 test("d1 store: commercial hierarchy + usage summary", async () => {
   const db = createTestD1Database();
   const store = createD1LeaseStore({ db });
@@ -286,6 +316,82 @@ test("d1 store: saveWorkspace rejects unknown customer", async () => {
   await expect(
     store.saveWorkspace({ workspaceId: "ws-1", providerId: "prov-1", customerId: "nonexistent" })
   ).rejects.toThrow("customer_not_found");
+
+  db.close();
+});
+
+test("d1 store: saveWorkspace rejects identity mismatch on existing workspace", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+
+  await store.saveProvider({ providerId: "prov-1", name: "P1" });
+  await store.saveProvider({ providerId: "prov-2", name: "P2" });
+  await store.saveCustomer("prov-1", { customerId: "cust-1" });
+  await store.saveCustomer("prov-2", { customerId: "cust-1" });
+
+  await store.saveWorkspace({
+    workspaceId: "ws-1",
+    providerId: "prov-1",
+    customerId: "cust-1",
+    name: "original",
+  });
+
+  await expect(
+    store.saveWorkspace({
+      workspaceId: "ws-1",
+      providerId: "prov-2",
+      customerId: "cust-1",
+      name: "hijack",
+    })
+  ).rejects.toThrow("workspace_identity_mismatch");
+
+  const rows = await store.listWorkspaces({ providerId: "prov-1" });
+  expect(rows.length).toBe(1);
+  expect(rows[0].providerId).toBe("prov-1");
+  expect(rows[0].name).toBe("original");
+
+  db.close();
+});
+
+test("d1 store: saveWorkspace ON CONFLICT WHERE clause skips update on identity mismatch (TOCTOU defense)", async () => {
+  const db = createTestD1Database();
+  const store = createD1LeaseStore({ db });
+
+  await store.saveProvider({ providerId: "prov-1", name: "P1" });
+  await store.saveProvider({ providerId: "prov-2", name: "P2" });
+  await store.saveCustomer("prov-1", { customerId: "cust-1" });
+  await store.saveCustomer("prov-2", { customerId: "cust-1" });
+
+  await store.saveWorkspace({
+    workspaceId: "ws-1",
+    providerId: "prov-1",
+    customerId: "cust-1",
+    name: "original",
+  });
+
+  // Bypass app-layer read-check-write: invoke raw upsert with mismatched identity.
+  // Simulates TOCTOU race where existing-row read returned null but another writer
+  // inserted between the read and our write.
+  await db
+    .prepare(
+      `INSERT INTO workspaces (
+        workspace_id, provider_id, customer_id, name, status, updated_at_sec
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+      ON CONFLICT(workspace_id)
+      DO UPDATE SET
+        name = COALESCE(excluded.name, workspaces.name),
+        status = excluded.status,
+        updated_at_sec = excluded.updated_at_sec
+      WHERE workspaces.provider_id = excluded.provider_id
+        AND workspaces.customer_id = excluded.customer_id`
+    )
+    .bind("ws-1", "prov-2", "cust-1", "hijacked", "ACTIVE", 9_999)
+    .run();
+
+  const rows = await store.listWorkspaces({});
+  expect(rows.length).toBe(1);
+  expect(rows[0].providerId).toBe("prov-1");
+  expect(rows[0].name).toBe("original");
 
   db.close();
 });

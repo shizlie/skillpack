@@ -113,3 +113,61 @@ test("sqlite listManualAttestations: result shape is correct", () => {
     source: "manual",
   });
 });
+
+test("sqlite getLatestManualAttestation: can scope by ticketId", () => {
+  const store = makeStore();
+  store.addManualAttestation({
+    customerId: "cust-ticket",
+    seatId: "seat-1",
+    operatorId: "op-1",
+    ticketId: "INC-1",
+    reason: "reason-one",
+    attestedAtSec: 1_000,
+    recordedAtSec: 1_001,
+    source: "manual",
+  });
+  store.addManualAttestation({
+    customerId: "cust-ticket",
+    seatId: "seat-1",
+    operatorId: "op-2",
+    ticketId: "INC-2",
+    reason: "reason-two",
+    attestedAtSec: 2_000,
+    recordedAtSec: 2_001,
+    source: "manual",
+  });
+
+  const latest = store.getLatestManualAttestation("cust-ticket", "seat-1", {
+    ticketId: "INC-1",
+  });
+  expect(latest.ticketId).toBe("INC-1");
+});
+
+test("sqlite saveWorkspace: rejects identity mismatch on existing workspace", () => {
+  const store = makeStore();
+  store.saveProvider({ providerId: "prov-1", name: "P1" });
+  store.saveProvider({ providerId: "prov-2", name: "P2" });
+  store.saveCustomer("prov-1", { customerId: "cust-1" });
+  store.saveCustomer("prov-2", { customerId: "cust-1" });
+
+  store.saveWorkspace({
+    workspaceId: "ws-1",
+    providerId: "prov-1",
+    customerId: "cust-1",
+    name: "original",
+  });
+
+  expect(() =>
+    store.saveWorkspace({
+      workspaceId: "ws-1",
+      providerId: "prov-2",
+      customerId: "cust-1",
+      name: "hijack",
+    })
+  ).toThrow("workspace_identity_mismatch");
+
+  const rows = store.listWorkspaces({ providerId: "prov-1" });
+  expect(rows.length).toBe(1);
+  expect(rows[0].providerId).toBe("prov-1");
+  expect(rows[0].name).toBe("original");
+});
