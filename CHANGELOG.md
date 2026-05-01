@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [Unreleased]
+
+## [0.6.3.0] - 2026-05-01
+
+### Added
+
+- Clerk-backed management auth for hosted API deployments, with `shared-key`, `clerk`, and `hybrid` modes so hosted operators can use Clerk sessions while self-hosted and automation users can keep using `SKILLPACK_API_KEY`.
+- Hosted smoke preflight that reports missing hosted URLs or Skillpack management auth before live verification.
+- Expanded hosted smoke coverage for hierarchy setup, policy issue, meter upload, usage summary, billing invoice draft, and optional Clerk-authenticated dashboard proxy verification.
+- Post-merge Cloudflare deployment checklist with terminal-first `bunx wrangler` commands.
+
+### Changed
+
+- Dashboard proxying now forwards Clerk bearer tokens to the API in Clerk/hybrid mode instead of requiring the Skillpack shared key as the only backend credential.
+- Hosted deploy verification now runs as a smoke-only GitHub workflow after terminal deployment, without Cloudflare API token or account ID inputs.
+- Hosted deploy manifest marks `SKILLPACK_API_KEY` as optional for Clerk/hybrid auth while keeping signing keys and Clerk secrets explicit.
+
 ## [0.6.2.0] - 2026-05-01
 
 ### Added
@@ -82,16 +99,6 @@ The format is based on Keep a Changelog.
 - `POST /v1/leases/issue` is now management-key-gated on hosted servers. Previously any caller could issue signed lease tokens without authentication.
 - Dashboard proxy path stripping now uses `slice` and rejects paths containing `..`, preventing path traversal to unintended upstream routes.
 - E2E and release workflow paths updated to match the new monorepo layout.
-
-## [Unreleased]
-
-### Added
-
-- Extended release workflow to publish distributable CLI/runtime artifacts per tag release:
-  - standalone Linux x64 binaries for `skillpack` CLI and runtime server
-  - source tarballs for CLI dependency closure and runtime source
-  - SHA-256 checksum files for all new artifacts
-- Added end-user release install/verification guide in `README.md` for binary and source distribution paths.
 
 ## [0.4.0.0] - 2026-04-22
 
