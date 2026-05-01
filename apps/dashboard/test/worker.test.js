@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import worker from "../src/index.js";
+import worker, { createDashboardWorker } from "../src/index.js";
 
 test("dashboard worker: serves shell and config", async () => {
   const shellRes = await worker.fetch(new Request("http://local/"), {});
@@ -84,4 +84,75 @@ test("dashboard worker: proxy rejects unauthenticated requests", async () => {
   );
   expect(res.status).toBe(401);
   expect(await res.json()).toEqual({ error: "unauthorized" });
+});
+
+test("dashboard worker: proxy can forward clerk bearer auth to api", async () => {
+  let upstreamRequest;
+  const worker = createDashboardWorker({
+    createClerkClientImpl: () => ({
+      authenticateRequest: async (request) => ({
+        isAuthenticated: request.headers.get("authorization") === "Bearer clerk-ok",
+        toAuth: () => ({ userId: "user_1" }),
+      }),
+    }),
+    fetchImpl: async (url, init) => {
+      upstreamRequest = { url, init };
+      return Response.json({ providers: [] });
+    },
+  });
+
+  const res = await worker.fetch(
+    new Request("http://local/api/v1/providers", {
+      headers: { authorization: "Bearer clerk-ok" },
+    }),
+    {
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+        "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
+      CLERK_SECRET_KEY: "sk_test_dummy_secret_key",
+      SKILLPACK_API_BASE_URL: "https://api.skillpack.example",
+      SKILLPACK_MANAGEMENT_AUTH_MODE: "clerk",
+      SKILLPACK_DASHBOARD_ORIGIN: "http://local",
+    }
+  );
+
+  expect(res.status).toBe(200);
+  expect(upstreamRequest.url).toBe("https://api.skillpack.example/v1/providers");
+  expect(upstreamRequest.init.headers.get("authorization")).toBe("Bearer clerk-ok");
+  expect(upstreamRequest.init.headers.has("x-api-key")).toBe(false);
+  expect(upstreamRequest.init.headers.get("x-skillpack-dashboard-user-id")).toBe("user_1");
+});
+
+test("dashboard worker: proxy keeps api-key mode for self-hosted deployments", async () => {
+  let upstreamRequest;
+  const worker = createDashboardWorker({
+    createClerkClientImpl: () => ({
+      authenticateRequest: async (request) => ({
+        isAuthenticated: request.headers.get("authorization") === "Bearer clerk-ok",
+        toAuth: () => ({ userId: "user_1" }),
+      }),
+    }),
+    fetchImpl: async (url, init) => {
+      upstreamRequest = { url, init };
+      return Response.json({ providers: [] });
+    },
+  });
+
+  const res = await worker.fetch(
+    new Request("http://local/api/v1/providers", {
+      headers: { authorization: "Bearer clerk-ok" },
+    }),
+    {
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+        "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
+      CLERK_SECRET_KEY: "sk_test_dummy_secret_key",
+      SKILLPACK_API_BASE_URL: "https://api.skillpack.example",
+      SKILLPACK_API_KEY: "backend-api-key",
+      SKILLPACK_MANAGEMENT_AUTH_MODE: "shared-key",
+      SKILLPACK_DASHBOARD_ORIGIN: "http://local",
+    }
+  );
+
+  expect(res.status).toBe(200);
+  expect(upstreamRequest.init.headers.get("x-api-key")).toBe("backend-api-key");
+  expect(upstreamRequest.init.headers.has("authorization")).toBe(false);
 });
