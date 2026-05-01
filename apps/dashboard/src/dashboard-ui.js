@@ -836,6 +836,21 @@ function syncSelect(node, items, valueKey, label, placeholder) {
   }
 }
 
+function syncOptionalSelect(node, items, valueKey, label, placeholder) {
+  if (!node) return;
+  const previous = node.value;
+  const options = ['<option value="">' + escapeHtml(placeholder) + "</option>"];
+  for (const item of items) {
+    options.push(
+      '<option value="' + escapeHtml(item[valueKey]) + '">' +
+      escapeHtml(label(item)) +
+      "</option>"
+    );
+  }
+  node.innerHTML = options.join("");
+  node.value = items.some((item) => item[valueKey] === previous) ? previous : "";
+}
+
 function refreshWorkspaceCustomerOptions() {
   const providerId = $("#workspace-provider").value;
   const customers = state.customers.filter((customer) => !providerId || customer.providerId === providerId);
@@ -862,24 +877,25 @@ function workspacesForProviderCustomer(providerId, customerId) {
 
 function refreshBillingCustomerOptions(prefix) {
   const providerId = $("#billing-" + prefix + "-provider").value;
-  syncSelect(
+  const sync = prefix === "rule" ? syncOptionalSelect : syncSelect;
+  sync(
     $("#billing-" + prefix + "-customer"),
     customersForProvider(providerId),
     "customerId",
     (customer) => customer.customerId,
-    "Create customer first"
+    prefix === "rule" ? "Any customer" : "Create customer first"
   );
 }
 
 function refreshBillingWorkspaceOptions(prefix) {
   const providerId = $("#billing-" + prefix + "-provider").value;
   const customerId = $("#billing-" + prefix + "-customer").value;
-  syncSelect(
+  syncOptionalSelect(
     $("#billing-" + prefix + "-workspace"),
     workspacesForProviderCustomer(providerId, customerId),
     "workspaceId",
     (workspace) => workspace.workspaceId,
-    "Optional"
+    "Any workspace"
   );
 }
 
@@ -1230,7 +1246,9 @@ async function handleBillingPaymentHandoff(event) {
       customer,
     },
   });
-  state.paymentHandoffs.push(response.paymentHandoff);
+  if (response.paymentHandoff) {
+    state.paymentHandoffs.push(response.paymentHandoff);
+  }
   renderBilling();
   setOutput("#billing-output", response);
 }

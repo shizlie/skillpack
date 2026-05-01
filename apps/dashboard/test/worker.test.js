@@ -13,9 +13,16 @@ test("dashboard worker: serves shell and config", async () => {
     await worker.fetch(new Request("http://local/"), {})
   ).text();
   expect(billingShell).toContain("Pricing rules and invoice handoffs");
+  expect(billingShell).toContain('id="metric-pricing-rules"');
+  expect(billingShell).toContain('id="metric-invoices"');
   expect(billingShell).toContain('id="billing-pricing-rule-form"');
   expect(billingShell).toContain('id="billing-invoice-draft-form"');
   expect(billingShell).toContain('id="billing-payment-handoff-form"');
+  expect(billingShell).toContain('id="billing-rule-customer"');
+  expect(billingShell).toContain('id="billing-invoice-workspace"');
+  expect(billingShell).toContain('<option value="manual">manual</option>');
+  expect(billingShell).toContain('<option value="dodo">dodo</option>');
+  expect(billingShell).toContain('<option value="stripe">stripe</option>');
 
   const configRes = await worker.fetch(new Request("http://local/app-config"), {
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
@@ -48,6 +55,12 @@ test("dashboard worker: serves assets and health", async () => {
   expect(dashboardScript).toContain("/v1/billing/pricing-rules");
   expect(dashboardScript).toContain("/v1/billing/invoices/draft");
   expect(dashboardScript).toContain("/payment-handoff");
+  expect(dashboardScript).toContain("syncOptionalSelect");
+  expect(dashboardScript).toContain("Any customer");
+  expect(dashboardScript).toContain("Any workspace");
+  expect(dashboardScript).toContain('bindAsyncForm("#billing-pricing-rule-form"');
+  expect(dashboardScript).toContain('bindAsyncForm("#billing-invoice-draft-form"');
+  expect(dashboardScript).toContain('bindAsyncForm("#billing-payment-handoff-form"');
 
   const healthRes = await worker.fetch(new Request("http://local/healthz"), {});
   expect(healthRes.status).toBe(200);
