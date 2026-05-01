@@ -76,13 +76,17 @@ When adding code: pure business logic → `packages/core`. CF Worker glue → `a
 
 See "Reviewer Concerns" section in design doc. Major items: lease refresh API contract, KMS key injection flow, clock-skew defense, multi-seat license granularity, failed-call billing semantics.
 
-## Critical gap to implement
+## TSA outage workflow status
 
-One unresolved critical gap remains from eng-review: TSA outage for air-gapped customers with no sneakernet operator. Required mitigation in implementation:
+The v1 operator continuity path for TSA outage in air-gapped customers is implemented:
 
 - Emit TSA token expiry warnings from the license server (foundation contract implemented)
 - Provide a manual time-attestation CLI escape hatch for incident response (foundation endpoint/contract implemented)
-- Complete end-to-end incident workflow (operator runbook, persistence, and runtime enforcement behavior)
+- Embed ticket-scoped manual attestations in lease issue responses via `tsaTicketId` / `--tsa-ticket-id`
+- Hydrate runtime TSA policy with `buildTsaPolicyFromLeaseResponse(response)`
+- Default manual attestation max age is 4 hours, with policy override via `maxManualAttestationAgeSec`
+
+Deferred until buyer input: structured TSA incident timeline storage/export. Do not add speculative audit endpoints or migrations until a design partner specifies the expected audit format.
 
 ## gstack
 

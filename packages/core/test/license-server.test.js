@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { generateEd25519KeyPair } from "@skillpack/crypto";
-import { createLicenseFetchHandler } from "../src/index.js";
+import { createInMemoryLeaseStore, createLicenseFetchHandler } from "../src/index.js";
 import { createSqliteLeaseStore } from "../src/storage-sqlite.js";
 
 test("issue + verify lease roundtrip works", async () => {
@@ -143,6 +143,58 @@ test("lease issue exposes TSA warning state when token is near expiry", async ()
   );
   const body = await res.json();
   expect(body.tsaState.status).toBe("warning");
+});
+
+test("lease issue embeds ticket-scoped manual attestation when TSA is expired", async () => {
+  const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-tsa-embed-key";
+  const leaseStore = createInMemoryLeaseStore();
+  await leaseStore.addManualAttestation({
+    customerId: "cust-tsa",
+    seatId: "seat-1",
+    operatorId: "op-1",
+    ticketId: "INC-1",
+    reason: "TSA outage incident response approved",
+    attestedAtSec: 1_800_000_010,
+    recordedAtSec: 1_800_000_011,
+    source: "manual-time-attestation",
+  });
+  await leaseStore.addManualAttestation({
+    customerId: "cust-tsa",
+    seatId: "seat-1",
+    operatorId: "op-2",
+    ticketId: "INC-2",
+    reason: "Different TSA outage incident response approved",
+    attestedAtSec: 1_800_000_020,
+    recordedAtSec: 1_800_000_021,
+    source: "manual-time-attestation",
+  });
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    leaseStore,
+    managementApiKey: mgmtKey,
+  });
+  const now = 1_800_000_100;
+
+  const res = await fetch(
+    new Request("http://local/v1/leases/issue", {
+      method: "POST",
+      headers: { "x-api-key": mgmtKey },
+      body: JSON.stringify({
+        customerId: "cust-tsa",
+        seatId: "seat-1",
+        nowSec: now,
+        lastTsaTokenAtSec: now - 8 * 24 * 60 * 60,
+        tsaTicketId: "INC-1",
+      }),
+    })
+  );
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.tsaState.status).toBe("expired");
+  expect(body.tsaState.latestManualAttestation.ticketId).toBe("INC-1");
+  expect(body.tsaState.maxManualAttestationAgeSec).toBe(4 * 60 * 60);
 });
 
 test("manual TSA attestation latest endpoint returns most recent per customer+seat", async () => {

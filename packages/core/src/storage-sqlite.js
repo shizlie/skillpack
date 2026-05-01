@@ -149,6 +149,7 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
       SELECT customer_id, seat_id, operator_id, ticket_id, reason, attested_at_sec, recorded_at_sec, source
       FROM manual_attestations
       WHERE customer_id = ?1 AND seat_id = ?2
+        AND (?3 IS NULL OR ticket_id = ?3)
       ORDER BY recorded_at_sec DESC, id DESC
       LIMIT 1
     `
@@ -259,6 +260,8 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
         name = COALESCE(excluded.name, workspaces.name),
         status = excluded.status,
         updated_at_sec = excluded.updated_at_sec
+      WHERE workspaces.provider_id = excluded.provider_id
+        AND workspaces.customer_id = excluded.customer_id
     `
   );
   const insertUsageEvent = db.query(
@@ -488,8 +491,12 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
         record.source
       );
     },
-    getLatestManualAttestation(customerId, seatId = "default") {
-      const row = selectLatestAttestation.get(customerId, normalizeSeatId(seatId));
+    getLatestManualAttestation(customerId, seatId = "default", { ticketId } = {}) {
+      const row = selectLatestAttestation.get(
+        customerId,
+        normalizeSeatId(seatId),
+        ticketId ?? null
+      );
       if (!row) return null;
       return {
         customerId: row.customer_id,
@@ -587,6 +594,12 @@ export function createSqliteLeaseStore({ dbPath = ":memory:" } = {}) {
         nowSec
       );
       const saved = selectWorkspace.get(workspace.workspaceId);
+      if (
+        saved.provider_id !== workspace.providerId ||
+        saved.customer_id !== workspace.customerId
+      ) {
+        throw new Error("workspace_identity_mismatch");
+      }
       return {
         workspaceId: saved.workspace_id,
         providerId: saved.provider_id,

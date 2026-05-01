@@ -88,6 +88,103 @@ test("cli: license issue emits token json", async () => {
   expect(parsed.payload.sub).toBe("cust-1");
 });
 
+test("cli: license issue prints TSA outage hint to stderr", async () => {
+  const { privateKeyFile, publicKeyFile } = writeKeys();
+  const sink = makeIo();
+  const code = await runSkillpackCli(
+    [
+      "license",
+      "issue",
+      "--customer-id",
+      "cust-1",
+      "--seat-id",
+      "seat-1",
+      "--private-key-file",
+      privateKeyFile,
+      "--public-key-file",
+      publicKeyFile,
+      "--now-sec",
+      "1800000000",
+      "--last-tsa-token-at-sec",
+      String(1_800_000_000 - 8 * 24 * 60 * 60),
+    ],
+    sink.io
+  );
+  expect(code).toBe(0);
+  const { out, err } = sink.read();
+  expect(JSON.parse(out).tsaState.status).toBe("expired");
+  expect(err).toMatch(/TSA token expired/);
+  expect(err).toMatch(/docs\/runbooks\/tsa-outage\.md/);
+  expect(err).toMatch(/skillpack tsa manual-attest/);
+});
+
+test("cli: server-backed license issue embeds ticket-scoped TSA attestation", async () => {
+  const keys = generateEd25519KeyPair();
+  const mgmtKey = "test-tsa-license-issue-server-key";
+  const fetch = createLicenseFetchHandler({
+    signingPrivateKeyPem: keys.privateKeyPem,
+    signingPublicKeyPem: keys.publicKeyPem,
+    managementApiKey: mgmtKey,
+  });
+
+  const attestSink = makeIo();
+  const attestCode = await runSkillpackCli(
+    [
+      "tsa",
+      "manual-attest",
+      "--server-url",
+      "http://local",
+      "--api-key",
+      mgmtKey,
+      "--customer-id",
+      "cust-issue-server",
+      "--seat-id",
+      "seat-issue-server",
+      "--operator-id",
+      "op-issue-server",
+      "--ticket-id",
+      "INC-ISSUE-SERVER",
+      "--reason",
+      "Manual attestation for server-backed license issue",
+      "--attested-at-sec",
+      "1800000005",
+    ],
+    attestSink.io,
+    { fetchImpl: fetch }
+  );
+  expect(attestCode).toBe(0);
+
+  const issueSink = makeIo();
+  const issueCode = await runSkillpackCli(
+    [
+      "license",
+      "issue",
+      "--server-url",
+      "http://local",
+      "--api-key",
+      mgmtKey,
+      "--customer-id",
+      "cust-issue-server",
+      "--seat-id",
+      "seat-issue-server",
+      "--now-sec",
+      "1800000010",
+      "--last-tsa-token-at-sec",
+      String(1_800_001_000 - 8 * 24 * 60 * 60),
+      "--tsa-ticket-id",
+      "INC-ISSUE-SERVER",
+    ],
+    issueSink.io,
+    { fetchImpl: fetch }
+  );
+  expect(issueCode).toBe(0);
+  const issued = JSON.parse(issueSink.read().out);
+  expect(issued.tsaState.status).toBe("expired");
+  expect(issued.tsaState.latestManualAttestation.ticketId).toBe(
+    "INC-ISSUE-SERVER"
+  );
+});
+
 test("cli: tsa manual-attest validates required fields", async () => {
   const sink = makeIo();
   const code = await runSkillpackCli(
@@ -149,6 +246,33 @@ test("cli: tsa manual-attest posts to server and latest-attestation reads record
   const attestParsed = JSON.parse(attestSink.read().out);
   expect(attestParsed.record.customerId).toBe("cust-9");
 
+  const secondAttestSink = makeIo();
+  const secondAttestCode = await runSkillpackCli(
+    [
+      "tsa",
+      "manual-attest",
+      "--server-url",
+      "http://local",
+      "--api-key",
+      mgmtKey,
+      "--customer-id",
+      "cust-9",
+      "--seat-id",
+      "seat-9",
+      "--operator-id",
+      "op-10",
+      "--ticket-id",
+      "INC-10",
+      "--reason",
+      "Later manual attestation for a separate TSA outage workflow",
+      "--attested-at-sec",
+      "1800000010",
+    ],
+    secondAttestSink.io,
+    { fetchImpl: fetch }
+  );
+  expect(secondAttestCode).toBe(0);
+
   const latestSink = makeIo();
   const latestCode = await runSkillpackCli(
     [
@@ -162,6 +286,8 @@ test("cli: tsa manual-attest posts to server and latest-attestation reads record
       "cust-9",
       "--seat-id",
       "seat-9",
+      "--ticket-id",
+      "INC-9",
     ],
     latestSink.io,
     { fetchImpl: fetch }

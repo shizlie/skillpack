@@ -30,11 +30,12 @@ export function createInMemoryLeaseStore() {
     addManualAttestation(record) {
       manualAttestations.push(record);
     },
-    getLatestManualAttestation(customerId, seatId = "default") {
+    getLatestManualAttestation(customerId, seatId = "default", { ticketId } = {}) {
       for (let i = manualAttestations.length - 1; i >= 0; i -= 1) {
         const record = manualAttestations[i];
         if (record.customerId !== customerId) continue;
         if ((record.seatId ?? "default") !== seatId) continue;
+        if (ticketId && record.ticketId !== ticketId) continue;
         return record;
       }
       return null;

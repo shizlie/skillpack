@@ -13,6 +13,7 @@ import { runSkillpackCli } from "../apps/cli/src/index.js";
 import { createLicenseFetchHandler } from "../packages/core/src/index.js";
 import { createSqliteLeaseStore } from "../packages/core/src/storage-sqlite.js";
 import {
+  buildTsaPolicyFromLeaseResponse,
   createRuntimeMeter,
   executeWithRuntimeLease,
   verifyLeaseForRuntime,
@@ -172,24 +173,26 @@ describe("full journey e2e", () => {
       [
         "license",
         "issue",
+        "--server-url",
+        "http://local",
+        "--api-key",
+        mgmtKey,
         "--customer-id",
         "cust-e2e-b",
         "--seat-id",
         "seat-b",
-        "--private-key-file",
-        privateKeyFile,
-        "--public-key-file",
-        publicKeyFile,
         "--now-sec",
         "1800000000",
         "--last-tsa-token-at-sec",
         String(1_800_000_000 - 8 * 24 * 60 * 60),
       ],
-      issueIo.io
+      issueIo.io,
+      { fetchImpl: fetch }
     );
     expect(issueCode).toBe(0);
     const issued = JSON.parse(issueIo.read().out);
     expect(issued.tsaState.status).toBe("expired");
+    expect(issued.tsaState.latestManualAttestation).toBeNull();
 
     const attestIo = makeIo();
     const attestCode = await runSkillpackCli(
@@ -218,11 +221,11 @@ describe("full journey e2e", () => {
     );
     expect(attestCode).toBe(0);
 
-    const latestIo = makeIo();
-    const latestCode = await runSkillpackCli(
+    const reissueIo = makeIo();
+    const reissueCode = await runSkillpackCli(
       [
-        "tsa",
-        "latest-attestation",
+        "license",
+        "issue",
         "--server-url",
         "http://local",
         "--api-key",
@@ -231,23 +234,26 @@ describe("full journey e2e", () => {
         "cust-e2e-b",
         "--seat-id",
         "seat-b",
+        "--now-sec",
+        "1800000010",
+        "--last-tsa-token-at-sec",
+        String(1_800_000_010 - 8 * 24 * 60 * 60),
+        "--tsa-ticket-id",
+        "INC-E2E-1",
       ],
-      latestIo.io,
+      reissueIo.io,
       { fetchImpl: fetch }
     );
-    expect(latestCode).toBe(0);
-    const latest = JSON.parse(latestIo.read().out);
-    expect(latest.record.ticketId).toBe("INC-E2E-1");
+    expect(reissueCode).toBe(0);
+    const reissued = JSON.parse(reissueIo.read().out);
+    expect(reissued.tsaState.latestManualAttestation.ticketId).toBe("INC-E2E-1");
 
+    const tsaPolicy = buildTsaPolicyFromLeaseResponse(reissued);
     const lease = verifyLeaseForRuntime({
-      leaseToken: issued.leaseToken,
+      leaseToken: reissued.leaseToken,
       publicKeyPem: fs.readFileSync(publicKeyFile, "utf8"),
       nowSec: 1_800_000_010,
-      tsaPolicy: {
-        lastTsaTokenAtSec: 1_800_000_000 - 8 * 24 * 60 * 60,
-        manualAttestation: latest.record,
-        maxManualAttestationAgeSec: 24 * 60 * 60,
-      },
+      tsaPolicy,
     });
     expect(lease.tsa.status).toBe("expired");
     expect(lease.tsa.manualAttestationUsed).toBe(true);

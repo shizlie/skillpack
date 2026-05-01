@@ -238,17 +238,19 @@ export function createD1LeaseStore({ db }) {
         record.source
       );
     },
-    async getLatestManualAttestation(customerId, seatId = "default") {
+    async getLatestManualAttestation(customerId, seatId = "default", { ticketId } = {}) {
       await ensureReady();
       const row = await firstRow(
         db,
         `SELECT customer_id, seat_id, operator_id, ticket_id, reason, attested_at_sec, recorded_at_sec, source
          FROM manual_attestations
          WHERE customer_id = ?1 AND seat_id = ?2
+           AND (?3 IS NULL OR ticket_id = ?3)
          ORDER BY recorded_at_sec DESC, id DESC
          LIMIT 1`,
         customerId,
-        normalizeSeatId(seatId)
+        normalizeSeatId(seatId),
+        ticketId ?? null
       );
       if (!row) return null;
       return {
@@ -463,7 +465,9 @@ export function createD1LeaseStore({ db }) {
         DO UPDATE SET
           name = COALESCE(excluded.name, workspaces.name),
           status = excluded.status,
-          updated_at_sec = excluded.updated_at_sec`,
+          updated_at_sec = excluded.updated_at_sec
+        WHERE workspaces.provider_id = excluded.provider_id
+          AND workspaces.customer_id = excluded.customer_id`,
         workspace.workspaceId,
         workspace.providerId,
         workspace.customerId,
@@ -479,6 +483,12 @@ export function createD1LeaseStore({ db }) {
          LIMIT 1`,
         workspace.workspaceId
       );
+      if (
+        saved.provider_id !== workspace.providerId ||
+        saved.customer_id !== workspace.customerId
+      ) {
+        throw new Error("workspace_identity_mismatch");
+      }
       return {
         workspaceId: saved.workspace_id,
         providerId: saved.provider_id,

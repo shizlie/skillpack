@@ -146,18 +146,8 @@ function zipDirectory(inputDir, outputFile) {
   }
 }
 
-async function issueLease(commandArgs) {
+async function issueLease(commandArgs, fetchImpl) {
   const flags = parseArgMap(commandArgs);
-  const privateKeyPem = readKey(flags["private-key-file"], "private_key_file");
-  const publicKeyPem = readKey(flags["public-key-file"], "public_key_file");
-  // Internal key for local signing — the private key is the real credential here.
-  const localKey = "cli-local-signing";
-  const fetch = createLicenseFetchHandler({
-    signingPrivateKeyPem: privateKeyPem,
-    signingPublicKeyPem: publicKeyPem,
-    managementApiKey: localKey,
-  });
-
   const body = {
     customerId: flags["customer-id"],
     seatId: flags["seat-id"] ?? "default",
@@ -165,16 +155,52 @@ async function issueLease(commandArgs) {
     ttlSec: parseIntArg(flags["ttl-sec"], undefined),
     nowSec: parseIntArg(flags["now-sec"], nowSec()),
     lastTsaTokenAtSec: parseIntArg(flags["last-tsa-token-at-sec"], undefined),
+    tsaTicketId: flags["tsa-ticket-id"] ?? flags["ticket-id"],
+    maxManualAttestationAgeSec: parseIntArg(
+      flags["max-manual-attestation-age-sec"],
+      undefined
+    ),
   };
 
-  const response = await fetch(
-    new Request("http://local/v1/leases/issue", {
-      method: "POST",
-      headers: { "x-api-key": localKey },
-      body: JSON.stringify(body),
-    })
-  );
-  return { status: response.status, body: await response.json() };
+  const serverUrl = normalizeServerUrl(flags["server-url"]);
+  let response;
+  if (serverUrl) {
+    response = await fetchImpl(
+      new Request(`${serverUrl}/v1/leases/issue`, {
+        method: "POST",
+        headers: buildServerHeaders(flags),
+        body: JSON.stringify(body),
+      })
+    );
+  } else {
+    const privateKeyPem = readKey(flags["private-key-file"], "private_key_file");
+    const publicKeyPem = readKey(flags["public-key-file"], "public_key_file");
+    // Internal key for local signing — the private key is the real credential here.
+    const localKey = "cli-local-signing";
+    const fetch = createLicenseFetchHandler({
+      signingPrivateKeyPem: privateKeyPem,
+      signingPublicKeyPem: publicKeyPem,
+      managementApiKey: localKey,
+    });
+    response = await fetch(
+      new Request("http://local/v1/leases/issue", {
+        method: "POST",
+        headers: { "x-api-key": localKey },
+        body: JSON.stringify(body),
+      })
+    );
+  }
+  const bodyJson = await response.json();
+  const stderr =
+    bodyJson.tsaState?.status === "warning" || bodyJson.tsaState?.status === "expired"
+      ? [
+          `[skillpack] WARNING: TSA token ${bodyJson.tsaState.status}.`,
+          "  Run incident workflow: docs/runbooks/tsa-outage.md",
+          "  Manual attestation:",
+          "    skillpack tsa manual-attest --server-url <license-server-url> --customer-id <customerId> --seat-id <seatId> --operator-id <operatorId> --ticket-id <ticketId> --reason \"<incident reason>\" --attested-at-sec <unix-sec>",
+        ].join("\n") + "\n"
+      : "";
+  return { status: response.status, body: bodyJson, stderr };
 }
 
 function verifyLease(commandArgs) {
@@ -225,11 +251,14 @@ async function latestAttestation(commandArgs, fetchImpl) {
   if (!flags["customer-id"]) throw new Error("missing_customer_id");
   const seatId = flags["seat-id"] ?? "default";
   const headers = buildServerHeaders(flags);
+  const ticketParam = flags["ticket-id"]
+    ? `&ticketId=${encodeURIComponent(flags["ticket-id"])}`
+    : "";
   const response = await fetchImpl(
     new Request(
       `${serverUrl}/v1/tsa/manual-attestations/latest?customerId=${encodeURIComponent(
         flags["customer-id"]
-      )}&seatId=${encodeURIComponent(seatId)}`,
+      )}&seatId=${encodeURIComponent(seatId)}${ticketParam}`,
       { method: "GET", headers }
     )
   );
@@ -619,7 +648,7 @@ export async function runSkillpackCli(
   try {
     let result;
     if (group === "license" && action === "issue") {
-      result = await issueLease(args.slice(2));
+      result = await issueLease(args.slice(2), fetchImpl);
     } else if (group === "license" && action === "verify") {
       result = verifyLease(args.slice(2));
     } else if (group === "tsa" && action === "manual-attest") {
@@ -658,6 +687,9 @@ export async function runSkillpackCli(
     if (result.status >= 400) {
       io.stderr.write(`${JSON.stringify(result.body)}\n`);
       return 1;
+    }
+    if (result.stderr) {
+      io.stderr.write(result.stderr);
     }
     io.stdout.write(`${JSON.stringify(result.body)}\n`);
     return 0;

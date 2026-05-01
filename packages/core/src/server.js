@@ -25,6 +25,7 @@ import { createPaymentProviderRegistry } from "./payment-providers.js";
 import { createInMemoryLeaseStore } from "./storage.js";
 
 const DEFAULT_TTL_SEC = 30 * 24 * 60 * 60;
+const DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC = 4 * 60 * 60;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -139,6 +140,12 @@ function isManagementRoute(request, pathname) {
 
 function hasDirectLeaseCommercialField(body, key) {
   return body[key] !== undefined && body[key] !== null;
+}
+
+function parsePositiveInteger(value, errorCode) {
+  if (value === undefined || value === null) return undefined;
+  if (!Number.isInteger(value) || value <= 0) throw new Error(errorCode);
+  return value;
 }
 
 export function createLicenseFetchHandler({
@@ -293,10 +300,33 @@ export function createLicenseFetchHandler({
 
         let tsaState = null;
         if (Number.isInteger(body.lastTsaTokenAtSec)) {
-          tsaState = tsaMonitor.evaluate({
+          const evaluated = tsaMonitor.evaluate({
             lastTsaTokenAtSec: body.lastTsaTokenAtSec,
             nowSec: iat,
           });
+          tsaState = {
+            ...evaluated,
+            lastTsaTokenAtSec: body.lastTsaTokenAtSec,
+          };
+          if (tsaState.status === "warning" || tsaState.status === "expired") {
+            const maxManualAttestationAgeSec =
+              parsePositiveInteger(
+                body.maxManualAttestationAgeSec,
+                "issue_invalid_max_manual_attestation_age"
+              ) ?? DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC;
+            const ticketId = body.tsaTicketId ?? body.ticketId;
+            const latestManualAttestation =
+              typeof ticketId === "string" && ticketId.length > 0
+                ? await leaseStore.getLatestManualAttestation(customerId, seatId, {
+                    ticketId,
+                  })
+                : null;
+            tsaState = {
+              ...tsaState,
+              latestManualAttestation,
+              maxManualAttestationAgeSec,
+            };
+          }
         }
 
         return json({ leaseToken, payload, tsaState });
@@ -576,7 +606,10 @@ export function createLicenseFetchHandler({
           throw new Error("manual_attestation_missing_customer_id");
         }
         const seatId = url.searchParams.get("seatId") ?? "default";
-        const record = await leaseStore.getLatestManualAttestation(customerId, seatId);
+        const ticketId = url.searchParams.get("ticketId") ?? undefined;
+        const record = await leaseStore.getLatestManualAttestation(customerId, seatId, {
+          ticketId,
+        });
         return json({ accepted: true, record });
       } catch (error) {
         return json({ accepted: false, error: error.message }, 400);
