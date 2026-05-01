@@ -58,6 +58,7 @@ function printRequiredBindings(resolved) {
       {
         publicVars: Object.keys(deployable.publicVars ?? {}),
         secrets: [...(deployable.secrets ?? [])],
+        optionalSecrets: [...(deployable.optionalSecrets ?? [])],
       },
     ])
   );
