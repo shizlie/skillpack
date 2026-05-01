@@ -13,7 +13,7 @@ That doc is the source of truth for product scope, architecture, threat model, s
 
 ## Status
 
-Pre-product. Pre-revenue. Design APPROVED. Week-1 foundations and CLI/runtime integration are implemented. Monorepo restructured into `packages/` (pure libs) and `apps/` (deployables). Dashboard worker with Clerk auth shipped. Current task: harden production storage/operations paths and ship release automation for distributable artifacts.
+Pre-product. Pre-revenue. Design APPROVED. Week-1 foundations and CLI/runtime integration are implemented. Monorepo restructured into `packages/` (pure libs) and `apps/` (deployables). Dashboard worker with Clerk auth shipped, including a hosted billing cockpit for pricing rules, invoice drafts, and payment handoffs. Current task: keep production storage, operations, billing, and release paths publishable.
 
 ## Package layout
 
@@ -44,7 +44,7 @@ When adding code: pure business logic → `packages/core`. CF Worker glue → `a
 - **License server, two flavors, both ship v1:**
     - Hosted: Hono on Cloudflare Workers + D1
     - Self-hosted: Docker image with embedded SQLite (mandatory for air-gapped customers)
-- **Dashboard UI:** deferred to post-LOI. v1 ships CLI + REST API only.
+- **Dashboard UI:** hosted Cloudflare Worker with Clerk auth and server-side API proxy. v1 exposes operator surfaces for commercial hierarchy, usage, TSA attestations, and billing handoffs while preserving CLI/self-host fallbacks.
 - **Dashboard operating model:** dashboard should not assume every operation needs the backend. Preserve and design for detached-capable dashboard flows where the browser can inspect local/exported state, prepared artifacts, cached data, or operator-provided files without calling the hosted API. Use the backend only for operations that truly require hosted state mutation, hosted verification, or live sync.
 - **Demo skill:** one — legal contract review (healthcare build deferred)
 
@@ -59,12 +59,12 @@ When adding code: pure business logic → `packages/core`. CF Worker glue → `a
 
 ## Out of scope for v1
 
-- Vendor dashboard UI
+- Accounting-grade dashboard finance workflows: tax, refunds, dunning, reconciliation, and payment webhook lifecycle automation
 - Healthcare demo skill build
 - Multi-seat/per-node licensing
 - FedRAMP, SOC2 Type II, HIPAA BAA
 - Bytecode/native obfuscation
-- Stripe billing integration
+- Payment webhook reconciliation and hosted customer portal flows
 - Public docs site
 - Python/TS authoring SDKs (CLI wraps MCPB)
 - Free hosted tier / multi-tenant license server
