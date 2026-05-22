@@ -1,0 +1,24 @@
+{
+  "name": "@skillpack/self-hosted",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "skillpack-server": "src/cli.js"
+  },
+  "scripts": {
+    "build:npm": "bun ../../scripts/build-self-hosted-npm.mjs",
+    "dev": "node --watch src/cli.js",
+    "start": "node src/cli.js",
+    "test": "node --test tests/**/*.test.js"
+  },
+  "dependencies": {
+    "@skillpack/core": "workspace:*",
+    "@skillpack/crypto": "workspace:*",
+    "@hono/node-server": "^1.13.8",
+    "hono": "^4.8.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

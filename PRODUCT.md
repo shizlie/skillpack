@@ -678,13 +678,17 @@ Implemented today:
 - manual attestation path
 - automated unit and journey tests
 
-Not yet complete at product level:
+Still in progress at product level:
 
-1. first-class provider/skill/bundle dimensions in usage storage
-2. full accepted-ledger model for multi-provider billing
-3. billing engine / invoice model
-4. dashboard UX layer
-5. packaging and release workflows at full product level
+1. ~~first-class provider/skill/bundle dimensions in usage storage~~ → shipped (commercial hierarchy API + D1 migration)
+2. ~~full accepted-ledger model for multi-provider billing~~ → shipped (meter upload → accepted usage → billing)
+3. ~~billing engine / invoice model~~ → shipped (pricing rules, draft invoices, Dodo/Stripe handoffs)
+4. ~~dashboard UX layer~~ → shipped (hosted Cloudflare Worker with Clerk auth + billing cockpit)
+5. ~~self-hosted Docker image for air-gapped deploys~~ → shipped (`apps/self-hosted`)
+6. analytics plane — ledger query/summarization for ops and finance
+7. dashboard crypto wiring — `@skillpack/crypto` verify/decode in dashboard UI
+8. Vite build pipeline for dashboard (post-LOI)
+9. RBAC in dashboard proxy (post-LOI)
 
 ---
 
@@ -718,68 +722,55 @@ Current status:
 
 ## 18) Package Structure
 
-**Status: executed 2026-04-22. 201/201 tests pass.**
+**Status: done 2026-04-22. 201/201 tests passed. Now 261/261 tests pass.**
 
-### Problem
+### Completed renames
 
-Current naming conflates library vs. deployable:
+- `packages/license-server/` → `packages/core/` (`@skillpack/core`)
+- `packages/license-server-worker/` → `apps/api/` (`@skillpack/api`)
+- `packages/cli/` → `apps/cli/` (`@skillpack/cli`)
+- `packages/wiki-mcp/` → `apps/wiki-mcp/` (`@skillpack/wiki-mcp`)
+- `listManualAttestations` — filters pushed to SQL
+- Ghost `packages/license-server/` directory removed
 
-| Package | Problem |
-|---------|---------|
-| `license-server` | Named like a server process. It is a pure JS library. |
-| `license-server-worker` | Name implies tight coupling to `license-server`. It is the API layer. |
-
-### Target layout
+### Current package layout
 
 ```
-packages/
-  # Pure libraries — no deploy concern
-  core/              ← rename from license-server
-  crypto/            (unchanged)
-  protocol/          (unchanged)
-  tsa/               (unchanged)
+packages/          pure shared libraries
+  core/            @skillpack/core — business logic, storage
+  crypto/          @skillpack/crypto — Ed25519 signing
+  protocol/        @skillpack/protocol — bundle format + schema
+  tsa/             @skillpack/tsa — timestamp authority client
+  runtime/         @skillpack/runtime — embedded skill runtime (.mcpb)
 
-  # Cloudflare Worker deployables
-  api-worker/        ← rename from license-server-worker
-  dashboard-worker/  (unchanged)
-
-  # Client + edge components
-  cli/               (unchanged)
-  runtime/           (unchanged)
-
-  # Demo
-  wiki-mcp/          (unchanged)
+apps/              deployable units
+  api/             @skillpack/api — CF Worker REST API
+  dashboard/       @skillpack/dashboard — CF Worker BFF + Clerk auth UI
+  cli/             @skillpack/cli — vendor-side CLI
+  self-hosted/     @skillpack/self-hosted — Node shared-key control plane + Docker image
+  wiki-mcp/        @skillpack/wiki-mcp — demo wiki MCP server
 ```
-
-### What changes
-
-1. `packages/license-server/` → `packages/core/`
-   - `package.json` name: `@skillpack/license-server` → `@skillpack/core`
-   - Update import in `api-worker`: `from "@skillpack/license-server"` → `from "@skillpack/core"`
-
-2. `packages/license-server-worker/` → `packages/api-worker/`
-   - `package.json` name: `@skillpack/license-server-worker` → `@skillpack/api-worker`
-   - `wrangler.jsonc` worker name: `skillpack-api-worker` → `skillpack-api`
-   - Root `package.json` workspace entry updated
-
-3. `bun install` regenerates `bun.lock` (no manual edits needed)
-
-4. No behavior changes. All tests pass unchanged.
 
 ### Multi-worker architecture (current)
 
 ```
 browser
-  └── dashboard-worker  (Cloudflare Worker)
+  └── dashboard worker  (Cloudflare Worker)
         ├── GET /               → serves dashboard HTML/JS/CSS
-        ├── GET /app-config     → returns Clerk publishable key (unauthenticated)
+        ├── GET /app-config     → returns Clerk publishable key + auth mode (unauthenticated)
         ├── GET /assets/*       → static JS + CSS
-        └── /api/*  (Clerk-gated) → proxies to api-worker with mgmt key injected
+        └── /api/*  (Clerk-gated or shared-key) → proxies to api worker
 
-api-worker  (Cloudflare Worker, or self-hosted Docker + Bun HTTP)
+api worker  (Cloudflare Worker)
   └── core library
         ├── D1 storage (hosted) or SQLite (self-hosted / air-gapped)
-        └── all management routes gated by x-api-key header
+        ├── management auth: shared-key, clerk, or hybrid mode
+        └── all management routes gated by x-api-key or Clerk bearer token
+
+self-hosted app  (Node HTTP + Docker)
+  └── core library + SQLite
+        ├── shared-key management auth only
+        └── same `/v1/*` control-plane routes as the hosted worker
 ```
 
 No Cloudflare Workers Service Bindings in v1 — HTTP proxy is simpler and
@@ -791,7 +782,7 @@ hop) are a v2 latency optimization if needed.
 Current: vanilla JS embedded as string in `dashboard-ui.js` — zero build step,
 works for single-operator internal tooling.
 
-Post-LOI migration path (when dashboard becomes a product surface):
+Post-LOI migration path:
 
 1. Add Vite build (`apps/dashboard/vite.config.ts`) → output to `dist/`
 2. Cloudflare Workers + Static Assets pattern — same worker, assets from `dist/`
@@ -811,9 +802,8 @@ by role claim in `proxyApiRequest`.
 
 ### Open items
 
-- [x] `license-server` → `packages/core`, `license-server-worker` → `apps/api` (done 2026-04-22)
-- [x] `listManualAttestations` — filters pushed to SQL (done 2026-04-22)
-- [ ] Self-hosted Docker image packaging (`apps/api` as Node/Bun HTTP server)
+- [x] Self-hosted Docker image packaging (`apps/self-hosted` as Node HTTP server)
 - [ ] Dashboard Vite build pipeline (post-LOI)
 - [ ] RBAC in dashboard proxy (post-LOI)
 - [ ] Semi-detached dashboard crypto: wire `@skillpack/crypto` verify/decode into dashboard UI (dep added, UI wiring deferred)
+- [ ] Analytics plane — usage ledger query/summarization

@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   release:
@@ -17,6 +18,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: bun install
@@ -49,7 +55,9 @@ jobs:
           EOF
 
       - name: Run tests
-        run: bun run test:unit
+        run: |
+          bun run test:unit
+          bun run --cwd apps/self-hosted test
 
       - name: Build bundle
         run: >
@@ -108,6 +116,28 @@ jobs:
             "dist/releases/v${VERSION}/skillpack-cli-${VERSION}-source.tar.gz.sha256"
           sha256sum "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-source.tar.gz" > \
             "dist/releases/v${VERSION}/skillpack-runtime-${VERSION}-source.tar.gz.sha256"
+
+      - name: Publish self-hosted npm package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          bun run --cwd apps/self-hosted build:npm
+          npm publish apps/self-hosted/dist/npm --access public --tag latest
+
+      - name: Publish self-hosted container image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/skillpack-self-hosted
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker build \
+            -f apps/self-hosted/Dockerfile \
+            -t "${IMAGE}:v${VERSION}" \
+            -t "${IMAGE}:latest" \
+            .
+          docker push "${IMAGE}:v${VERSION}"
+          docker push "${IMAGE}:latest"
 
       - name: Extract changelog entry
         id: notes

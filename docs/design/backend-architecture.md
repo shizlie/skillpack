@@ -57,9 +57,9 @@ This is the backbone of the product.
 | Provider Plane | Hono API Worker + D1 |
 | Control Plane | Hono API Worker + D1 |
 | Runtime Plane | local runtime |
-| Ingestion Plane | Hono API Worker -> Durable Object |
+| Ingestion Plane | Hono API Worker (synchronous, Durable Objects post-LOI) |
 | Ledger Plane | D1 |
-| Billing Plane | Queue consumer + D1 |
+| Billing Plane | D1 (pricing rules, invoices, payment handoffs) |
 | Analytics Plane | D1 rollups, later dedicated analytics if needed |
 
 ---

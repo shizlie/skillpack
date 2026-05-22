@@ -1,10 +1,9 @@
-import crypto from "node:crypto";
-
 import {
   assertMonotonicLeaseCounter,
   createLeaseToken,
   verifyLeaseToken,
 } from "@skillpack/crypto";
+import { isValidManagementKey, randomUUID } from "./crypto-utils.js";
 import {
   validateAcceptedUsageSummaryRow,
   validateCustomerCreateContract,
@@ -62,19 +61,6 @@ function readApiKey(request) {
   return request.headers.get("x-api-key") ?? request.headers.get("X-Api-Key");
 }
 
-function isValidManagementKey(request, managementApiKey) {
-  const providedApiKey = readApiKey(request);
-  if (
-    typeof providedApiKey !== "string" ||
-    typeof managementApiKey !== "string" ||
-    providedApiKey.length !== managementApiKey.length
-  ) {
-    return false;
-  }
-  const hashKey = (key) => crypto.createHash("sha256").update(key).digest();
-  return crypto.timingSafeEqual(hashKey(providedApiKey), hashKey(managementApiKey));
-}
-
 async function authenticateManagementRequest(
   request,
   { managementApiKey, managementAuthenticator }
@@ -91,7 +77,9 @@ async function authenticateManagementRequest(
   if (!managementApiKey) {
     return json({ error: "management_api_key_not_configured" }, 503);
   }
-  if (!isValidManagementKey(request, managementApiKey)) {
+  const providedApiKey = readApiKey(request);
+  const valid = await isValidManagementKey(providedApiKey, managementApiKey);
+  if (!valid) {
     return json({ error: "unauthorized" }, 401);
   }
   return null;
@@ -301,7 +289,7 @@ export function createLicenseFetchHandler({
           seatId,
           iat,
           exp: iat + ttlSec,
-          jti: crypto.randomUUID(),
+          jti: randomUUID(),
           leaseCounter: nextCounter,
           providerId: body.providerId,
           workspaceId: body.workspaceId,
@@ -533,7 +521,7 @@ export function createLicenseFetchHandler({
         const saveInvoice = getStoreMethod(leaseStore, "saveInvoice");
         const usageEvents = await getAcceptedUsageEvents(draftRequest);
         const pricingRules = await listPricingRules(draftRequest);
-        const invoiceId = draftRequest.invoiceId ?? crypto.randomUUID();
+        const invoiceId = draftRequest.invoiceId ?? randomUUID();
         const invoice = draftInvoiceFromUsage({
           ...draftRequest,
           invoiceId,

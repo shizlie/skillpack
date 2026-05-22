@@ -32,6 +32,8 @@ Published release assets now include:
 - `skillpack-cli-<version>-source.tar.gz.sha256`
 - `skillpack-runtime-<version>-source.tar.gz`
 - `skillpack-runtime-<version>-source.tar.gz.sha256`
+- npm package `@skillpack/self-hosted` for `npx @skillpack/self-hosted`
+- GHCR image `ghcr.io/shizlie/skillpack-self-hosted:v<version>` plus `:latest`
 
 ---
 
@@ -176,7 +178,7 @@ The page has two sections: **Repository secrets** and **Environment secrets**.
 
 Use **Repository secrets** — click **"New repository secret"** in that section. If you see a dropdown asking for an environment, you clicked the wrong section.
 
-Add two secrets one at a time:
+Add three secrets one at a time:
 
 **Secret 1:**
 
@@ -188,7 +190,13 @@ Add two secrets one at a time:
 - Name: `LAWS_CONSULTANT_PUBLIC_KEY`
 - Value: paste the entire contents of `/tmp/release-public.pem`, including the `-----BEGIN PUBLIC KEY-----` and `-----END PUBLIC KEY-----` lines
 
-After both secrets are saved, delete the local files:
+#### `NPM_TOKEN`
+
+- Value: an npm automation token with publish access to the `@skillpack` scope
+- Used only to publish the bundled `@skillpack/self-hosted` package during tag releases
+- The GHCR container image uses `GITHUB_TOKEN`; it does not need a separate registry secret
+
+After all three secrets are saved, delete the local files:
 
 ```bash
 rm /tmp/release-private.pem /tmp/release-public.pem

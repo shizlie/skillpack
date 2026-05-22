@@ -18,8 +18,8 @@ Receiver-side acceptance after bundle delivery is documented separately in:
 In scope:
 
 - `@skillpack/cli`
-- `@skillpack/license-server`
-- `@skillpack/license-server-worker` (Cloudflare Worker + D1 storage)
+- `@skillpack/core`
+- `@skillpack/api` (Cloudflare Worker + D1 storage)
 - `@skillpack/protocol` (commercial contract validation)
 - `@skillpack/runtime`
 - `@skillpack/wiki-mcp`
@@ -100,12 +100,12 @@ const env = {
 const res = await worker.fetch(new Request("http://local/v1/providers", { ... }), env);
 ```
 
-The `createTestD1Database()` helper wraps `new Database(":memory:")` with `{ prepare, exec, batch }` matching the D1 API. Lives in `packages/license-server-worker/test/worker.test.js`.
+The `createTestD1Database()` helper wraps `new Database(":memory:")` with `{ prepare, exec, batch }` matching the D1 API. Lives in `apps/api/test/worker.test.js`.
 
 Gate command:
 
 ```bash
-bun test packages/license-server-worker
+bun test apps/api
 ```
 
 ### Journey C: Wiki via MCP lifecycle
@@ -202,7 +202,7 @@ On failure:
 3. [ ] Add CI workflow step for `test:e2e`.
 4. [x] Keep `browse` lane documented as optional until UI exists.
 5. [x] Add Journey D: commercial hierarchy + D1 worker tests (no wrangler needed).
-6. [x] Add `"test": "bun test"` to `packages/license-server-worker/package.json`.
+6. [x] Add `"test": "bun test"` to `apps/api/package.json`.
 
 ## Skill Distribution Test Matrix (`verticals/laws-consultant`)
 
@@ -214,7 +214,7 @@ On failure:
 Suggested command:
 
 ```bash
-bun test packages/cli/test/cli.test.js
+bun test apps/cli/test/cli.test.js
 ```
 
 ### Integration tests
@@ -225,7 +225,7 @@ bun test packages/cli/test/cli.test.js
 Suggested command:
 
 ```bash
-bun test packages/wiki-mcp/test/wiki-mcp.test.js
+bun test apps/wiki-mcp/test/wiki-mcp.test.js
 ```
 
 ### E2E tests
@@ -276,7 +276,7 @@ bun run test:wiki-rag
 bun run test:wiki-rag-fallback
 bun run test:wiki-rag-parity
 bun run test:wiki-rag-resilience
-bun test packages/wiki-mcp/test/wiki-mcp.test.js
+bun test apps/wiki-mcp/test/wiki-mcp.test.js
 ```
 
 3. Verify bundle embeds preindex artifacts:

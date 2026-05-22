@@ -15,11 +15,11 @@ Use this runbook when TSA token freshness is expired and no sneakernet operator 
 
 1. Confirm TSA freshness is expired from the lease issue response (`tsaState.status = "expired"`). `skillpack license issue` also prints this warning to stderr when `--last-tsa-token-at-sec` is outside the allowed window.
 2. Record a manual time attestation:
-   `skillpack tsa manual-attest --server-url <license-server-url> --customer-id <customerId> --seat-id <seatId> --operator-id <operatorId> --ticket-id <ticketId> --reason "<incident reason>" --attested-at-sec <unix-sec>`
+   `skillpack tsa manual-attest --server-url <api-url> --customer-id <customerId> --seat-id <seatId> --operator-id <operatorId> --ticket-id <ticketId> --reason "<incident reason>" --attested-at-sec <unix-sec>`
 3. Verify attestation persistence:
-   `skillpack tsa latest-attestation --server-url <license-server-url> --customer-id <customerId> --seat-id <seatId> --ticket-id <ticketId>`
+   `skillpack tsa latest-attestation --server-url <api-url> --customer-id <customerId> --seat-id <seatId> --ticket-id <ticketId>`
 4. Re-issue the lease against the same license server with the same incident ticket identifier:
-   `skillpack license issue --server-url <license-server-url> --api-key <api-key> --customer-id <customerId> --seat-id <seatId> --last-tsa-token-at-sec <unix-sec> --tsa-ticket-id <ticketId>`
+   `skillpack license issue --server-url <api-url> --api-key <api-key> --customer-id <customerId> --seat-id <seatId> --last-tsa-token-at-sec <unix-sec> --tsa-ticket-id <ticketId>`
    The lease issue response automatically embeds `tsaState.latestManualAttestation`.
 5. Runtime calls `buildTsaPolicyFromLeaseResponse(response)` from `@skillpack/runtime` and passes the returned policy to `verifyLeaseForRuntime`. No manual injection of attestation records is required.
 6. Resume customer runtime operations.

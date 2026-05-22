@@ -9,5 +9,7 @@
 9. [x] P2: `saveWorkspace` TOCTOU — add DB-level identity constraint (`CHECK` on `provider_id`/`customer_id` in ON CONFLICT clause) to both SQLite and D1 migrations so concurrent upserts with mismatched identity fail at the DB layer rather than only at the read-check-write app layer.
 10. [x] Deploy lane next: add terminal-first Wrangler deploy flow for hosted `apps/api` and `apps/dashboard` so frontend and backend deploy independently but stay env-wired together (`SKILLPACK_API_BASE_URL`, dashboard origin, Clerk config, management key injection).
 11. [x] Deploy verification: add post-deploy smoke coverage for the hosted pair (`/healthz`, `/app-config`, authenticated dashboard proxy call, provider/customer/workspace create, policy issue, meter upload, usage summary, billing invoice draft).
-12. [ ] Docs truth-sync: reconcile `README.md`, `CLAUDE.md`, and runbooks with the current repo state so they consistently describe what already ships (dashboard worker exists, hosted API worker exists) vs. what is still pending.
-13. [ ] Optional self-host path decision: either ship a real self-hosted `apps/api` deployable (Bun HTTP + SQLite + Docker) for air-gapped provider ops, or explicitly de-scope it from v1 docs if hosted-only is the intended product.
+12. [x] Docs truth-sync: reconcile `README.md`, `CLAUDE.md`, `PRODUCT.md`, and runbooks with the current repo state so they consistently describe what already ships vs. what is still pending.
+13. [x] Self-host path decision: either ship a real self-hosted `apps/api` deployable (Bun HTTP + SQLite + Docker) for air-gapped provider ops, or explicitly de-scope it from v1 docs if hosted-only is the intended product. (Done — see `apps/self-hosted/`)
+14. [ ] Analytics plane: usage ledger query/summarization surface for ops, finance, and customer success.
+15. [ ] Dashboard crypto wiring: wire `@skillpack/crypto` verify/decode into dashboard UI for lease/policy integrity inspection from the browser.

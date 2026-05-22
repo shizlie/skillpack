@@ -13,7 +13,7 @@ That doc is the source of truth for product scope, architecture, threat model, s
 
 ## Status
 
-Pre-product. Pre-revenue. Design APPROVED. Week-1 foundations and CLI/runtime integration are implemented. Monorepo restructured into `packages/` (pure libs) and `apps/` (deployables). Dashboard worker with Clerk auth shipped, including a hosted billing cockpit for pricing rules, invoice drafts, and payment handoffs. Current task: keep production storage, operations, billing, and release paths publishable.
+Pre-product. Pre-revenue. Design APPROVED. Core control plane, CLI, runtime, hosted dashboard with Clerk auth, billing cockpit (pricing rules, draft invoices, Dodo/Stripe handoffs), direct-mode meter upload, and hosted deploy are all implemented. Monorepo restructured into `packages/` (pure libs) and `apps/` (deployables). Management auth supports `shared-key`, `clerk`, and `hybrid` modes. Current task: self-hosted Docker image decision, analytics plane, dashboard crypto wiring, and keeping docs synced with shipped code.
 
 ## Package layout
 
@@ -30,6 +30,7 @@ apps/              deployable units
   dashboard/       @skillpack/dashboard — CF Worker BFF + Clerk auth UI
   cli/             @skillpack/cli — vendor-side CLI
   wiki-mcp/        @skillpack/wiki-mcp — demo wiki MCP server
+  self-hosted/     @skillpack/self-hosted — Node.js entry point for self-hosted deployments
 ```
 
 When adding code: pure business logic → `packages/core`. CF Worker glue → `apps/api`. New deployable → `apps/`.
@@ -47,6 +48,18 @@ When adding code: pure business logic → `packages/core`. CF Worker glue → `a
 - **Dashboard UI:** hosted Cloudflare Worker with Clerk auth and server-side API proxy. v1 exposes operator surfaces for commercial hierarchy, usage, TSA attestations, and billing handoffs while preserving CLI/self-host fallbacks.
 - **Dashboard operating model:** dashboard should not assume every operation needs the backend. Preserve and design for detached-capable dashboard flows where the browser can inspect local/exported state, prepared artifacts, cached data, or operator-provided files without calling the hosted API. Use the backend only for operations that truly require hosted state mutation, hosted verification, or live sync.
 - **Demo skill:** one — legal contract review (healthcare build deferred)
+
+## Self-hosted architecture
+
+- `apps/self-hosted` is the Node.js entry point for self-hosted deployments
+- Uses `better-sqlite3` for SQLite storage
+- TSA manual attestations required for clock tamper protection
+- Dashboard uses shared-key auth (no Clerk)
+
+## Performance notes
+
+- `better-sqlite3` uses synchronous API and blocks the Node event loop
+- For production, run behind `cluster` or `pm2` with `instances: 'max'`
 
 ## Conventions
 

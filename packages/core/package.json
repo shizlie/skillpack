@@ -7,12 +7,14 @@
   "exports": {
     ".": "./src/index.js",
     "./storage-sqlite": "./src/storage-sqlite.js",
-    "./storage-d1": "./src/storage-d1.js"
+    "./storage-d1": "./src/storage-d1.js",
+    "./storage-better-sqlite3": "./src/storage-better-sqlite3.js"
   },
   "dependencies": {
     "@skillpack/crypto": "workspace:*",
     "@skillpack/protocol": "workspace:*",
-    "@skillpack/tsa": "workspace:*"
+    "@skillpack/tsa": "workspace:*",
+    "better-sqlite3": "^11.8.2"
   },
   "scripts": {
     "test": "bun test"

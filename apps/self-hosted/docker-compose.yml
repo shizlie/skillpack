@@ -1,0 +1,17 @@
+services:
+  skillpack:
+    build:
+      context: ../..
+      dockerfile: apps/self-hosted/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      SKILLPACK_API_KEY: ${SKILLPACK_API_KEY}
+      SKILLPACK_SIGNING_PRIVATE_KEY_PEM: ${SKILLPACK_SIGNING_PRIVATE_KEY_PEM}
+      SKILLPACK_SIGNING_PUBLIC_KEY_PEM: ${SKILLPACK_SIGNING_PUBLIC_KEY_PEM}
+    volumes:
+      - skillpack-data:/data
+    restart: unless-stopped
+
+volumes:
+  skillpack-data:

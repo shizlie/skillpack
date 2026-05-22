@@ -2,7 +2,7 @@
 
 Commerce layer for vertical AI skills shipped as compiled `.mcpb` bundles.
 
-**Status:** pre-product. Design approved 2026-04-18. Week-1 foundations and CLI/runtime integration shipped (crypto, protocol, license-server, TSA contracts, CLI/runtime packages).
+**Status:** pre-product. Pre-revenue. Design approved 2026-04-18. Core control plane, CLI, runtime, hosted dashboard, and billing are implemented. Commercial hierarchy, policy enforcement, meter ingest, billing, and hosted deploy are live.
 
 **From the initiator:** Please don't use this if not needed. Skills and knowledges should be shared in the open whenever possible, for the common good. I created this just to help moving scene forward, Skill As A Software (SaaS, SkAAS, or whatever you want to call it)
 
@@ -19,7 +19,7 @@ skillpack gives vendors:
 
 1. **A CLI** to bundle a skill into a signed `.mcpb` (Anthropic's MCP bundle format)
 2. **An embedded runtime** that verifies the license lease offline, enforces TTL + grace, and writes a tamper-resistant usage log
-3. **A license server** (hosted on Cloudflare Workers, or self-hosted via Docker for air-gapped customers) that issues leases and ingests meter logs
+3. **A control plane** (hosted on Cloudflare Workers, or self-hosted via Docker for air-gapped customers) that issues leases, enforces policy, ingests meter logs, and rates billing
 
 ---
 
@@ -43,8 +43,8 @@ Compiled `.mcpb` bundles fix the format. skillpack adds the commerce.
 | Licensing                    | Lease-based: 30d TTL, 72h grace. Not instant revoke.              |
 | Metering                     | HMAC-chained append-only log, key rotates per lease refresh       |
 | Shared protocol contracts    | Lease/meter/TSA validation + monotonic counter checks             |
-| License server (hosted)      | Hono on Cloudflare Workers + D1                                   |
-| License server (self-hosted) | Docker + SQLite. Mandatory v1 deliverable for air-gapped buyers.  |
+| API (hosted)                 | Hono on Cloudflare Workers + D1                                   |
+| API (self-hosted)            | Docker + SQLite. Mandatory v1 deliverable for air-gapped buyers.  |
 | TSA safeguards               | Token-freshness warnings + manual time-attestation contract       |
 | Vendor dashboard             | Cloudflare Worker dashboard with Clerk auth + server-side API proxy |
 | Demo skill                   | One legal contract review skill. No healthcare build in v1.       |
@@ -67,6 +67,64 @@ Full design: `~/.gstack/projects/hcproduct-verticalAI/baoharryngo-master-design-
 - Out-of-band CRL push polling (daily lease refresh carries CRL)
 - D1 rearchitecture for high-volume ingest (revisit post-LOI)
 - LLM eval gate (no skillpack-owned prompt content in v1)
+
+---
+
+## Self-Hosted
+
+Run the license server on your own infrastructure (Node or Docker) with SQLite.
+
+### Quick start
+
+```bash
+npx @skillpack/self-hosted \
+  --db ./skillpack.db \
+  --api-key $SKILLPACK_API_KEY \
+  --signing-private-key ./signing-private.pem \
+  --signing-public-key ./signing-public.pem
+```
+
+### Docker
+
+```bash
+docker run -d \
+  -v skillpack-data:/data \
+  -p 3001:3001 \
+  -e SKILLPACK_API_KEY \
+  -e SKILLPACK_SIGNING_PRIVATE_KEY_PEM \
+  -e SKILLPACK_SIGNING_PUBLIC_KEY_PEM \
+  ghcr.io/shizlie/skillpack-self-hosted:latest
+```
+
+### Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `SKILLPACK_API_KEY` | ✅ | Shared secret for management API access |
+| `SKILLPACK_SIGNING_PRIVATE_KEY_PEM` | ✅ | Ed25519 private key for signing leases |
+| `SKILLPACK_SIGNING_PUBLIC_KEY_PEM` | ✅ | Ed25519 public key for verifying leases |
+
+### Auth model
+
+Self-hosted uses shared-key auth only (no Clerk). Pass `x-api-key` header on all management API calls. The dashboard prompts for the API key on first load and stores it in `localStorage`.
+
+### Clock tamper protection (manual attestation)
+
+Self-hosted servers use manual TSA (Timestamp Authority) attestations to prevent customers from rewinding system clocks to extend expired leases. Without regular attestations, the server trusts the host OS clock.
+
+To record a manual attestation:
+```bash
+skillpack tsa manual-attest \
+  --server-url http://localhost:3001 \
+  --customer-id <customerId> \
+  --seat-id <seatId> \
+  --operator-id <operatorId> \
+  --ticket-id <ticketId> \
+  --reason "Weekly time attestation" \
+  --attested-at-sec $(date +%s)
+```
+
+Air-gapped deployments: run the CLI from an operator workstation with network access, or call `POST /v1/tsa/manual-attest` directly with the attestation payload. When TSA freshness expires, lease issue responses can embed a ticket-scoped attestation for runtime policy; runtime execution rejects missing or stale attestations using its configured max-age window. Already-issued leases continue until their TTL.
 
 ---
 
@@ -99,15 +157,20 @@ Open core. Runtime + CLI: open source (Apache 2.0 planned). Hosted license serve
 Eng review is complete. Week-1 foundations and CLI/runtime integration are implemented:
 
 - `packages/crypto`: signing, lease token, meter-chain primitives + hardening tests
-- `packages/protocol`: shared validation contracts for lease/meter/TSA flows
-- `packages/license-server`: lease issue/verify endpoints + manual TSA attestation endpoint
+- `packages/protocol`: shared validation contracts for lease/meter/TSA/billing/commercial flows
+- `packages/core`: business logic, storage (SQLite + D1), lease issue/verify, policy, meter ingest, billing, commercial hierarchy
 - `packages/tsa`: token-freshness monitor + manual attestation contract
-- `packages/cli`: `skillpack` CLI commands for lease issue/verify + manual TSA attestation
-- `packages/runtime`: runtime lease verification/grace handling + meter event emission
+- `apps/cli`: `skillpack` CLI commands for lease, policy, meter, usage, billing, and TSA operations
+- `apps/api`: Cloudflare Worker REST API (hosted control plane)
+- `apps/dashboard`: Cloudflare Worker BFF + Clerk auth UI (hosted dashboard)
+- `apps/self-hosted`: Node control-plane entry point with shared-key auth, SQLite, and Docker packaging
+- `packages/runtime`: runtime lease verification/grace handling + meter event emission + direct upload
 
 Next implementation lane:
 
-- Validate the new release artifacts with a receiver smoke test on each tagged release and document expected operator troubleshooting paths.
+- **Analytics plane** — usage ledger query/summarization for ops, finance, and customer success
+- **Dashboard crypto wiring** — `@skillpack/crypto` verify/decode in dashboard UI
+- **Docs truth-sync** — keep README, CLAUDE.md, and runbooks consistent with shipped code
 
 ## End-user install guide (Release artifacts)
 
@@ -119,6 +182,8 @@ Artifacts:
 - `skillpack-runtime-<version>-linux-x64` (standalone runtime server binary)
 - `skillpack-cli-<version>-source.tar.gz` (auditable/rebuildable CLI workspace source bundle)
 - `skillpack-runtime-<version>-source.tar.gz` (runtime source bundle)
+- `@skillpack/self-hosted` on npm for the `npx` self-hosted control-plane path
+- `ghcr.io/shizlie/skillpack-self-hosted:v<version>` and `:latest` container images
 - `*.sha256` checksum files for each artifact
 
 ### Option A: use standalone binaries (recommended for operators)
@@ -335,7 +400,7 @@ Verify on receiver machine (inside extracted `laws-consultant-<version>/`):
 
 `@skillpack/wiki-mcp` exposes the local vertical wiki as MCP tools/resources.
 
-- Package: `packages/wiki-mcp`
+- Package: `apps/wiki-mcp`
 - Default wiki path: `verticals/laws-consultant/wiki`
 - CLI binary: `skillpack-wiki-mcp`
 
@@ -349,7 +414,7 @@ Supported MCP methods:
 
 Run locally:
 
-`bun run packages/wiki-mcp/src/cli.js --wiki-dir=verticals/laws-consultant/wiki`
+`bun run apps/wiki-mcp/src/cli.js --wiki-dir=verticals/laws-consultant/wiki`
 
 ## TSA outage incident workflow (implemented)
 
@@ -368,5 +433,6 @@ The default manual attestation validity window is 4 hours. Structured incident t
 
 Storage integration:
 
-- `@skillpack/license-server` now supports `createSqliteLeaseStore({ dbPath })` for persistent lease counters + manual attestation records.
-- `startLicenseServer({ storageMode: "sqlite", storagePath: "/path/to/lease-store.sqlite" })` enables persistent self-hosted storage.
+- `@skillpack/core` supports `createSqliteLeaseStore({ dbPath })` for persistent lease counters + manual attestation records.
+- `createApiWorker` (in `apps/api`) supports both D1 (hosted) and SQLite (self-hosted) storage.
+- Billing storage (pricing rules, invoices, payment handoffs) is supported in both SQLite and D1.
