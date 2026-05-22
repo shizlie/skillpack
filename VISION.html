@@ -1,0 +1,1313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>skillpack — Vision</title>
+<style>
+  :root {
+    --bg: #0a0c0f;
+    --bg-2: #10141a;
+    --panel: #141a22;
+    --panel-2: #1a212b;
+    --line: #232c38;
+    --line-2: #344052;
+    --ink: #ecf1f8;
+    --ink-2: #a8b3c2;
+    --ink-3: #6c7888;
+    --leaser: #7cffb2;
+    --hub: #6aa3ff;
+    --runtime: #ffc36a;
+    --signer: #ff8cd6;
+    --gateway: #a78cff;
+    --ledger: #7cf0ff;
+    --billing: #ffe27c;
+    --danger: #ff6a8a;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, -apple-system, "Inter", "Segoe UI", Roboto, sans-serif;
+    --serif: ui-serif, "Iowan Old Style", Georgia, serif;
+    --maxw: 1240px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f8f8f3;
+      --bg-2: #efefea;
+      --panel: #ffffff;
+      --panel-2: #f6f6f1;
+      --line: #e2e2da;
+      --line-2: #c8c8bf;
+      --ink: #0d1015;
+      --ink-2: #3a424e;
+      --ink-3: #707a89;
+      --leaser: #157a48;
+      --hub: #1c4ed8;
+      --runtime: #9a6300;
+      --signer: #b7228a;
+      --gateway: #5d3bd6;
+      --ledger: #0a6e80;
+      --billing: #8a6a00;
+      --danger: #b81e3e;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+  body { line-height: 1.5; font-size: 16px; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+  section { padding: 96px 0; border-top: 1px solid var(--line); }
+  section:first-of-type { border-top: 0; }
+  h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; letter-spacing: -0.012em; margin: 0; }
+  h1 { font-size: clamp(44px, 6.4vw, 84px); line-height: 1.02; letter-spacing: -0.03em; }
+  h2 { font-size: clamp(30px, 3.6vw, 44px); line-height: 1.12; margin-bottom: 18px; }
+  h3 { font-size: 19px; line-height: 1.3; }
+  p { color: var(--ink-2); margin: 0 0 14px; max-width: 78ch; }
+  p.lede { color: var(--ink); font-size: clamp(18px, 1.6vw, 22px); line-height: 1.5; max-width: 760px; }
+  strong { color: var(--ink); font-weight: 600; }
+  code, .mono { font-family: var(--mono); font-size: 0.92em; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+  }
+  a { color: var(--hub); text-decoration: none; }
+
+  /* Nav */
+  nav.top {
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: blur(10px);
+    background: color-mix(in oklab, var(--bg) 82%, transparent);
+    border-bottom: 1px solid var(--line);
+  }
+  nav.top .row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; }
+  nav.top .brand { font-family: var(--mono); font-size: 13px; }
+  nav.top .brand .dot { color: var(--leaser); }
+  nav.top ul { list-style: none; padding: 0; margin: 0; display: flex; gap: 22px; }
+  nav.top ul a { color: var(--ink-2); font-size: 13px; }
+  nav.top ul a:hover { color: var(--ink); }
+
+  /* Hero */
+  .hero { padding: 120px 0 100px; }
+  .hero small.over {
+    display: block; font-family: var(--mono);
+    color: var(--ink-3); font-size: 12px; letter-spacing: 0.2em;
+    text-transform: uppercase; margin-bottom: 26px;
+  }
+  .hero h1 em { font-style: normal; color: var(--leaser); }
+  .meta-strip {
+    margin-top: 44px;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  }
+  .meta-strip div { padding: 18px 18px 18px 0; border-right: 1px solid var(--line); }
+  .meta-strip div:last-child { border-right: 0; }
+  .meta-strip .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); }
+  .meta-strip .v { font-size: 14px; color: var(--ink); margin-top: 6px; }
+  @media (max-width: 900px) { .meta-strip { grid-template-columns: 1fr 1fr; } }
+
+  /* Component tile */
+  .comp-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
+  }
+  @media (max-width: 1000px) { .comp-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px) { .comp-grid { grid-template-columns: 1fr; } }
+
+  .comp {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0;
+    display: flex; flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+  .comp .head {
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .comp .swatch {
+    width: 10px; height: 10px; border-radius: 50%;
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--swatch, var(--ink-3)) 18%, transparent);
+    background: var(--swatch, var(--ink-3));
+  }
+  .comp .title { font-family: var(--sans); font-weight: 600; font-size: 15px; color: var(--ink); }
+  .comp .pkg {
+    margin-left: auto;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+  }
+  .comp .body { padding: 16px 20px 18px; }
+  .comp .role { font-size: 14px; color: var(--ink-2); margin: 0 0 14px; }
+  .comp .ports {
+    display: grid; gap: 6px;
+    border-top: 1px dashed var(--line);
+    padding-top: 12px;
+  }
+  .comp .port {
+    display: grid; grid-template-columns: 60px 1fr;
+    gap: 12px; align-items: baseline;
+    font-size: 13px; color: var(--ink-2);
+  }
+  .comp .port .dir {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--swatch, var(--ink-3));
+  }
+  .comp .foot {
+    margin-top: auto;
+    padding: 12px 20px;
+    border-top: 1px solid var(--line);
+    background: var(--panel-2);
+    font-family: var(--mono); font-size: 11.5px;
+    color: var(--ink-3);
+    display: flex; justify-content: space-between; gap: 12px;
+  }
+  .comp .foot .status b { color: var(--swatch, var(--ink)); font-weight: 500; }
+
+  .comp.leaser  { --swatch: var(--leaser); }
+  .comp.hub     { --swatch: var(--hub); }
+  .comp.runtime { --swatch: var(--runtime); }
+  .comp.signer  { --swatch: var(--signer); }
+  .comp.gateway { --swatch: var(--gateway); }
+  .comp.ledger  { --swatch: var(--ledger); }
+  .comp.billing { --swatch: var(--billing); }
+  .comp.cli     { --swatch: var(--ink-2); }
+  .comp.policy  { --swatch: var(--danger); }
+
+  /* Bus diagram */
+  .bus {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 28px;
+    background: var(--bg-2);
+  }
+  .bus-rail {
+    display: grid; gap: 14px;
+  }
+  .bus-row {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 22px;
+    align-items: center;
+  }
+  .bus-row .label {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .bus-row .label b { display:block; color: var(--ink); font-weight: 500; font-size: 13px; letter-spacing: 0.04em; }
+  .nodes { display: flex; flex-wrap: wrap; gap: 8px; }
+  .node {
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid color-mix(in oklab, var(--c, var(--ink-3)) 50%, var(--line));
+    background: color-mix(in oklab, var(--c, var(--ink-3)) 10%, var(--panel));
+    color: var(--ink);
+    font-family: var(--mono); font-size: 12px;
+    display: flex; align-items: center; gap: 8px;
+    white-space: nowrap;
+  }
+  .node::before {
+    content: "";
+    width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--ink-3));
+  }
+  .node.opt { opacity: 0.7; border-style: dashed; }
+
+  /* Composition cards */
+  .compose-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  @media (max-width: 900px) { .compose-grid { grid-template-columns: 1fr; } }
+  .compose {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    padding: 22px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .compose h3 { font-family: var(--sans); font-size: 17px; font-weight: 600; }
+  .compose .tag {
+    align-self: flex-start;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3);
+    border: 1px solid var(--line-2);
+    padding: 3px 9px; border-radius: 2px;
+  }
+  .chain {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  }
+  .chain .arrow { color: var(--ink-3); font-family: var(--mono); }
+
+  /* Channels matrix */
+  .channels {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .channels table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .channels th, .channels td {
+    text-align: left; padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .channels th {
+    background: var(--panel-2);
+    font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 500;
+  }
+  .channels tr:last-child td { border-bottom: 0; }
+  .channels td:first-child { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+  .channels td .why { color: var(--ink-3); font-size: 12.5px; display: block; margin-top: 4px; font-family: var(--mono); }
+
+  /* Roadmap */
+  .road { display: grid; }
+  .road-row {
+    display: grid; grid-template-columns: 130px 200px 1fr 140px;
+    gap: 22px; align-items: baseline;
+    padding: 22px 0;
+    border-top: 1px solid var(--line);
+  }
+  .road-row:last-child { border-bottom: 1px solid var(--line); }
+  .road-row .horizon {
+    font-family: var(--mono); font-size: 12px; color: var(--ink-3);
+    letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .road-row .horizon b { display: block; color: var(--ink); font-weight: 500; }
+  .road-row .target {
+    font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+  }
+  .road-row .target b { display: block; color: var(--ink); font-weight: 500; font-size: 13px; font-family: var(--sans); margin-bottom: 4px; }
+  .road-row .desc { font-size: 14.5px; color: var(--ink-2); }
+  .road-row .desc h4 { font-size: 15px; color: var(--ink); margin-bottom: 4px; font-family: var(--sans); font-weight: 600; }
+  .road-row .ship {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-align: right;
+  }
+  @media (max-width: 900px) {
+    .road-row { grid-template-columns: 1fr; gap: 6px; }
+    .road-row .ship { text-align: left; }
+  }
+
+  /* Principles */
+  .principles { display: grid; gap: 0; }
+  .principle {
+    border-top: 1px solid var(--line);
+    padding: 22px 0;
+    display: grid; grid-template-columns: 60px 1fr; gap: 16px;
+  }
+  .principle:last-child { border-bottom: 1px solid var(--line); }
+  .principle .n { font-family: var(--mono); font-size: 13px; color: var(--ink-3); }
+  .principle h3 { font-family: var(--sans); font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+  .principle p { font-size: 14.5px; margin: 0; }
+
+  /* Pull */
+  .pull {
+    font-family: var(--serif);
+    font-size: clamp(22px, 2.6vw, 32px);
+    line-height: 1.3; color: var(--ink);
+    border-left: 3px solid var(--leaser);
+    padding: 6px 0 6px 22px;
+    max-width: 820px;
+  }
+  .split { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 56px; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; gap: 24px; } }
+
+  /* Legend */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px;
+    font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .legend i {
+    width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+    background: var(--c);
+  }
+
+  footer {
+    padding: 60px 0 80px; border-top: 1px solid var(--line);
+    color: var(--ink-3); font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em;
+  }
+  footer .row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+
+  /* Svg diagram */
+  .svg-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-2); padding: 20px; }
+  svg .label { font-family: var(--mono); font-size: 11px; fill: var(--ink-2); }
+  svg .title { font-family: var(--sans); font-size: 13px; fill: var(--ink); font-weight: 600; }
+  svg .edge { stroke: var(--line-2); stroke-width: 1.2; fill: none; }
+  svg .edge.dashed { stroke-dasharray: 4 4; }
+  svg .box { fill: var(--panel); stroke: var(--line); }
+  svg .leaser-fill { fill: color-mix(in oklab, var(--leaser) 14%, var(--panel)); stroke: var(--leaser); }
+  svg .hub-fill { fill: color-mix(in oklab, var(--hub) 14%, var(--panel)); stroke: var(--hub); }
+  svg .runtime-fill { fill: color-mix(in oklab, var(--runtime) 14%, var(--panel)); stroke: var(--runtime); }
+  svg .signer-fill { fill: color-mix(in oklab, var(--signer) 14%, var(--panel)); stroke: var(--signer); }
+  svg .gateway-fill { fill: color-mix(in oklab, var(--gateway) 14%, var(--panel)); stroke: var(--gateway); }
+  svg .ledger-fill { fill: color-mix(in oklab, var(--ledger) 14%, var(--panel)); stroke: var(--ledger); }
+  svg .billing-fill { fill: color-mix(in oklab, var(--billing) 14%, var(--panel)); stroke: var(--billing); }
+
+  /* Personas */
+  .persona-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+  .persona {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .persona header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 22px 24px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel-2);
+  }
+  .persona header h3 { font-family: var(--sans); font-size: 18px; font-weight: 600; margin: 0; }
+  .persona header .sub { font-family: var(--mono); font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+  .persona .avatar {
+    width: 48px; height: 48px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: color-mix(in oklab, var(--c, var(--ink-3)) 24%, var(--panel));
+    border: 1px solid color-mix(in oklab, var(--c, var(--ink-3)) 60%, var(--line));
+    color: var(--ink);
+    font-family: var(--serif); font-size: 22px; font-weight: 600;
+  }
+  .persona.creator { --c: var(--leaser); }
+  .persona.leasee  { --c: var(--hub); }
+  .persona.user    { --c: var(--runtime); }
+  .persona .lanes {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+  }
+  .persona .lane {
+    padding: 22px 24px;
+    border-right: 1px solid var(--line);
+  }
+  .persona .lane:last-child { border-right: 0; }
+  .persona .lane h4 {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--ink-3); font-weight: 500;
+    margin: 0 0 14px;
+  }
+  .persona .lane.today h4 { color: var(--danger); }
+  .persona .lane.wins  h4 { color: var(--c); }
+  .persona .lane ul {
+    list-style: none; padding: 0; margin: 0; display: grid; gap: 10px;
+  }
+  .persona .lane li {
+    font-size: 14px; color: var(--ink-2); line-height: 1.45;
+    padding-left: 16px; position: relative;
+  }
+  .persona .lane li::before {
+    content: ""; position: absolute; left: 0; top: 8px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: color-mix(in oklab, var(--c, var(--ink-3)) 60%, var(--line-2));
+  }
+  .persona .lane.today li::before { background: color-mix(in oklab, var(--danger) 40%, var(--line-2)); }
+  @media (max-width: 900px) {
+    .persona .lanes { grid-template-columns: 1fr; }
+    .persona .lane { border-right: 0; border-bottom: 1px solid var(--line); }
+    .persona .lane:last-child { border-bottom: 0; }
+  }
+
+  /* Story matrix */
+  .story {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--panel);
+  }
+  .story-head, .story-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 1fr 1fr;
+  }
+  .story-head {
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--line);
+  }
+  .story-head .col-head {
+    padding: 14px 18px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-2); font-weight: 500;
+    border-left: 1px solid var(--line);
+  }
+  .story-head .col-head.creator-col { color: var(--leaser); }
+  .story-head .col-head.leasee-col  { color: var(--hub); }
+  .story-head .col-head.user-col    { color: var(--runtime); }
+  .story-row {
+    border-top: 1px solid var(--line);
+  }
+  .story-row .moment {
+    padding: 18px;
+    background: var(--panel-2);
+    font-family: var(--mono); font-size: 12px;
+    color: var(--ink-3); letter-spacing: 0.04em;
+    border-right: 1px solid var(--line);
+  }
+  .story-row .moment b {
+    display: block;
+    color: var(--ink);
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0;
+    margin-bottom: 4px;
+  }
+  .story-row .cell {
+    padding: 18px;
+    font-size: 14px;
+    color: var(--ink-2);
+    border-left: 1px solid var(--line);
+    line-height: 1.5;
+  }
+  .story-row .cell.muted { color: var(--ink-3); font-family: var(--mono); font-size: 12px; }
+  @media (max-width: 900px) {
+    .story-head { display: none; }
+    .story-row { grid-template-columns: 1fr; }
+    .story-row .moment { border-right: 0; border-bottom: 1px solid var(--line); }
+    .story-row .cell { border-left: 0; border-bottom: 1px solid var(--line); }
+    .story-row .cell::before {
+      content: attr(data-who);
+      display: block;
+      font-family: var(--mono); font-size: 11px;
+      color: var(--ink-3); letter-spacing: 0.14em;
+      text-transform: uppercase; margin-bottom: 6px;
+    }
+  }
+
+  /* Flywheel */
+  .flywheel-wrap {
+    display: grid; grid-template-columns: 0.95fr 1.05fr; gap: 36px;
+    align-items: center;
+  }
+  @media (max-width: 900px) { .flywheel-wrap { grid-template-columns: 1fr; } }
+  .flywheel-svg {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .flywheel-list { display: grid; gap: 14px; }
+  .reward {
+    display: grid; grid-template-columns: 14px 1fr; gap: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    padding: 16px 18px;
+  }
+  .reward .ix {
+    width: 10px; height: 10px; border-radius: 50%;
+    margin-top: 7px;
+    box-shadow: 0 0 0 4px color-mix(in oklab, currentColor 0%, transparent);
+  }
+  .reward h4 {
+    font-family: var(--sans); font-size: 15px; font-weight: 600;
+    margin: 0 0 4px; color: var(--ink);
+  }
+  .reward p { margin: 0; font-size: 14px; color: var(--ink-2); }
+  .incentive-foot {
+    margin-top: 28px;
+    border-top: 1px solid var(--line);
+    padding-top: 22px;
+  }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap row">
+    <div class="brand">skillpack<span class="dot">.</span>vision</div>
+    <ul>
+      <li><a href="#unbundle">Unbundle</a></li>
+      <li><a href="#components">Components</a></li>
+      <li><a href="#delivery">Delivery</a></li>
+      <li><a href="#compositions">Compositions</a></li>
+      <li><a href="#people">People</a></li>
+      <li><a href="#story">Story</a></li>
+      <li><a href="#incentive">Incentive</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero wrap">
+  <small class="over">Vision · mid-term · 2026 → 2027 · composable</small>
+  <h1>Skills are software. <em>Pay the people who build them.</em></h1>
+  <p class="lede" style="margin-top:30px;">
+    skillpack is not one product. It is a set of small, separable components — signer,
+    leaser, runtime, ledger, billing, hub, gateway, CLI — that snap together into the
+    operating model a skill author needs to ship into regulated, disconnected, customer-controlled
+    environments. <strong>The hub is one delivery channel.</strong> A skill can also ship by file,
+    by email, by USB, by internal mirror. Every component does one job and exposes a contract.
+  </p>
+
+  <div class="meta-strip">
+    <div><div class="k">Shape</div><div class="v">Composable, not monolithic</div></div>
+    <div><div class="k">Bundle</div><div class="v">Signed <span class="mono">.mcpb</span> · Ed25519 · TSA-anchored</div></div>
+    <div><div class="k">License</div><div class="v">Open-core · runtime + CLI Apache 2.0</div></div>
+    <div><div class="k">Self-host</div><div class="v">First-class · contract parity with hosted</div></div>
+  </div>
+</header>
+
+<!-- UNBUNDLE -->
+<section id="unbundle" class="wrap">
+  <p class="eyebrow">01 · the unbundling</p>
+  <h2>One platform, many components. Pick what you need.</h2>
+  <div class="split">
+    <div>
+      <p>
+        The natural failure mode for a control plane is to merge "everything the vendor needs"
+        into a single service: signing, leasing, distribution, billing, hosting, the dashboard,
+        the registry. That works until a buyer requires self-host. Or rips out the registry. Or
+        wants their own payment provider. Or air-gaps the entire environment and only accepts
+        skills delivered on a USB drive.
+      </p>
+      <p>
+        skillpack inverts the default. Every responsibility is its own component with its own
+        package, its own contract, its own deploy. You can run all of it. Or one piece. Or
+        replace any of it with your own.
+      </p>
+    </div>
+    <div>
+      <blockquote class="pull">
+        The hub helps. It is not required. The leaser is required. The signer is required.
+        Everything else is a substitution.
+      </blockquote>
+      <div class="legend">
+        <span><i style="--c:var(--leaser)"></i>Leaser</span>
+        <span><i style="--c:var(--hub)"></i>Hub</span>
+        <span><i style="--c:var(--signer)"></i>Signer</span>
+        <span><i style="--c:var(--runtime)"></i>Runtime</span>
+        <span><i style="--c:var(--ledger)"></i>Ledger</span>
+        <span><i style="--c:var(--billing)"></i>Billing</span>
+        <span><i style="--c:var(--gateway)"></i>Gateway</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPONENTS -->
+<section id="components" class="wrap">
+  <p class="eyebrow">02 · component catalog</p>
+  <h2>Nine components. Sharp contracts. Independently shippable.</h2>
+  <p style="max-width:760px;">Each tile is a separately versioned, separately deployable piece. The ports column shows the contract it exposes. The status row shows where it sits today and where it is going mid-term.</p>
+
+  <div class="comp-grid" style="margin-top:28px;">
+
+    <article class="comp signer">
+      <div class="head">
+        <span class="swatch"></span>
+        <span class="title">Signer</span>
+        <span class="pkg">@skillpack/crypto · @skillpack/protocol</span>
+      </div>
+      <div class="body">
+        <p class="role">Mints provenance. Signs bundles, leases, policy snapshots, manual attestations. Verifies the same. Pure library, no deploy.</p>
+        <div class="ports">
+          <div class="port"><span class="dir">in</span><span>private key · payload · clock</span></div>
+          <div class="port"><span class="dir">out</span><span>detached signature · verify result</span></div>
+          <div class="port"><span class="dir">contract</span><span>Ed25519, manifest hashes, JWS-shaped tokens</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="status">status · <b>shipping</b></span>
+        <span>required</span>
+      </div>
+    </article>
+
+    <article class="comp leaser">
+      <div class="head">
+        <span class="swatch"></span>
+        <span class="title">Leaser</span>
+        <span class="pkg">@skillpack/core · apps/api</span>
+      </div>
+      <div class="body">
+        <p class="role">Issues time-bounded permission to run. Lease + grace, monotonic counter, ticket-scoped TSA manual attestations. Hosted (Workers + D1) or self-hosted (Bun + SQLite). Same code.</p>
+        <div class="ports">
+          <div class="port"><span class="dir">in</span><span>workspace · seat · skill · entitlement</span></div>
+          <div class="port"><span class="dir">out</span><span>signed lease · embedded policy · CRL</span></div>
+          <div class="port"><span class="dir">contract</span><span>/v1/leases/* · /v1/policies/* · /v1/tsa/*</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="status">status · <b>shipping</b></span>
+        <span>required</span>
+      </div>
+    </article>
+
+    <article class="comp runtime">
+      <div class="head">
+        <span class="swatch"></span>
+        <span class="title">Runtime</span>
+        <span class="pkg">@skillpack/runtime</span>
+      </div>
+      <div class="body">
+        <p class="role">Lives inside the .mcpb. Verifies lease, enforces TTL + grace, captures meter events into a tamper-evident chain. Does not execute the skill — it sits alongside the skill host.</p>
+        <div class="ports">
+          <div class="port"><span class="dir">in</span><span>bundle · lease · policy · clock</span></div>
+          <div class="port"><span class="dir">out</span><span>meter.jsonl · enforcement decision</span></div>
+          <div class="port"><span class="dir">contract</span><span>HMAC-chained meter, lease verify, grace policy</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="status">status · <b>shipping</b></span>
+        <span>required</span>
+      </div>
+    </article>
+
+    <article class="comp ledger">
+      <div class="head">
+        <span class="swatch"></span>
+        <span class="title">Ledger</span>
+        <span class="pkg">apps/api · D1 / SQLite</span>
+      </div>
+      <div class="body">
+        <p class="role">Server-side accepted-usage record. Keyed on provider · customer · workspace · seat · skill · tool. The source of truth for everything commercial. Local meter is evidence; ledger is fact.</p>
+        <div class="ports">
+          <div class="port"><span class="dir">in</span><span>ingest upload · dedup window</span></div>
+          <div class="port"><span class="dir">out</span><span>accepted facts · query rollups</span></div>
+          <div class="port"><span class="dir">contract</span><span>/v1/meter/upload · /v1/usage/summary</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="status">status · <b>shipping → identity expansion (mid-term)</b></span>
+        <span>required</span>
+      </div>
+    </article>
+
+    <article class="comp billing">
+      <div class="head">
+        <span class="swatch"></span>
+        <span class="title">Billing</span>
+        <span class="pkg">apps/api · billing core</span>
+      </div>
+      <div class="body">
+        <p class="role">Rates ledger events into invoice lines. Pricing rules, draft invoices, payment handoff. Payment providers are pluggable: manual, Stripe, Dodo. Skillpack owns the money, not the gateway.</p>
+        <div class="ports">
+          <div class="port"><span class="dir">in</span><span>ledger rows · pricing rules</span></div>
+          <div class="port"><span class="dir">out</span><span>draft invoices · handoff URLs</span></div>
+          <div class="port"><span class="dir">contract</span><span>/v1/billing/* · adapter SPI</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="status">status · <b>shipping → royalty splits (next)</b></span>
+        <span>optional</span>
+      </div>
+    </article>
+
+    <article class="comp hub">
+      <div class="head">
+        <span class="swatch"></span>
+        <span class="title">Hub</span>
+        <span class="pkg">new · apps/hub (mid-term)</span>
+      </div>
+      <div class="body">
+        <p class="role">A delivery channel. Not the only one. Open-source registry app: skill pages, semver channels, signed eval badges, install one-liner. Talks to the leaser through entitlement APIs; never holds licensing state itself.</p>
+        <div class="ports">
+          <div class="port"><span class="dir">in</span><span>publish bundle · channel promote</span></div>
+          <div class="port"><span class="dir">out</span><span>fetch URL · manifest · public key</span></div>
+          <div class="port"><span class="dir">contract</span><span>/hub/v1/skills · /hub/v1/channels · OCI-style pull</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="status">status · <b>planned · h2</b></span>
+        <span>optional · substitutable</span>
+      </div>
+    </article>
+
+    <article class="comp gateway">
+      <div class="head">
+        <span class="swatch"></span>
+        <span class="title">Edge Gateway</span>
+        <span class="pkg">new · apps/edge (h4)</span>
+      </div>
+      <div class="body">
+        <p class="role">Site-level service for restricted-egress customers. One service, many skills, many agents. Offline queue, batched upload, single approved egress. Outside the .mcpb on purpose.</p>
+        <div class="ports">
+          <div class="port"><span class="dir">in</span><span>local meter events · local lease cache</span></div>
+          <div class="port"><span class="dir">out</span><span>batched upload · ack range</span></div>
+          <div class="port"><span class="dir">contract</span><span>local intake · upstream sync · DLQ</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="status">status · <b>planned · h4</b></span>
+        <span>optional</span>
+      </div>
+    </article>
+
+    <article class="comp cli">
+      <div class="head">
+        <span class="swatch"></span>
+        <span class="title">CLI</span>
+        <span class="pkg">@skillpack/cli</span>
+      </div>
+      <div class="body">
+        <p class="role">Operator surface for every component. Build a bundle, issue a lease, sync policy, upload meter, attest TSA manually, install from hub, fetch by entitlement. Works against hosted or self-hosted.</p>
+        <div class="ports">
+          <div class="port"><span class="dir">in</span><span>operator intent · keys · server URL</span></div>
+          <div class="port"><span class="dir">out</span><span>API calls · signed bundles · JSON results</span></div>
+          <div class="port"><span class="dir">contract</span><span>bundle, license, policy, meter, usage, tsa, hub</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="status">status · <b>shipping → hub commands (mid-term)</b></span>
+        <span>required for ops</span>
+      </div>
+    </article>
+
+    <article class="comp policy">
+      <div class="head">
+        <span class="swatch"></span>
+        <span class="title">Dashboard / BFF</span>
+        <span class="pkg">apps/dashboard · Clerk</span>
+      </div>
+      <div class="body">
+        <p class="role">Hosted operator UI for the leaser, ledger, billing. BFF, not a re-implementation of the API. Designed to also run partly detached: inspect signed artifacts, exported state, cached data — without round-tripping to hosted.</p>
+        <div class="ports">
+          <div class="port"><span class="dir">in</span><span>Clerk session · operator action</span></div>
+          <div class="port"><span class="dir">out</span><span>proxied API calls · rendered views</span></div>
+          <div class="port"><span class="dir">contract</span><span>HTTP proxy, no service bindings (v1)</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="status">status · <b>shipping</b></span>
+        <span>optional</span>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<!-- DELIVERY CHANNELS -->
+<section id="delivery" class="wrap">
+  <p class="eyebrow">03 · delivery is plural</p>
+  <h2>The hub is one channel. Skills also ship by file, mail, USB, internal mirror.</h2>
+  <p style="max-width:780px;">
+    A signed <span class="mono">.mcpb</span> is portable by design. Sign once. Ship by whatever the
+    customer's environment allows. The leaser, the runtime, and the ledger don't care which channel
+    moved the bytes — they care that the signature verifies, the lease matches, and the meter
+    syncs.
+  </p>
+
+  <div class="channels" style="margin-top:24px;">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:18%;">Channel</th>
+          <th style="width:38%;">How the bytes move</th>
+          <th style="width:22%;">Trust anchor</th>
+          <th style="width:22%;">Update path</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>hub<span class="why">discovery + auto-pull</span></td>
+          <td>Agent or runtime fetches by entitlement from a public or self-hosted registry.</td>
+          <td>Bundle signature + hub manifest signature.</td>
+          <td>Channel promote (stable / beta) + delta updates.</td>
+        </tr>
+        <tr>
+          <td>direct download<span class="why">vendor URL</span></td>
+          <td>Vendor publishes a signed .mcpb on their own site. Buyer downloads.</td>
+          <td>Bundle signature alone.</td>
+          <td>Operator re-downloads on tag bump.</td>
+        </tr>
+        <tr>
+          <td>email<span class="why">attachment</span></td>
+          <td>Vendor mails the bundle + public key + SHA256 sums to the customer's named operator.</td>
+          <td>Bundle signature + out-of-band key fingerprint.</td>
+          <td>New email per release.</td>
+        </tr>
+        <tr>
+          <td>file drop<span class="why">SFTP, S3, share</span></td>
+          <td>Vendor places signed artifacts in a customer-owned drop. Customer pulls on schedule.</td>
+          <td>Bundle signature + drop-side access control.</td>
+          <td>Pull job watches for new tag.</td>
+        </tr>
+        <tr>
+          <td>removable media<span class="why">USB, optical</span></td>
+          <td>Air-gapped sites: physically carried sealed media. Mandatory for some defense and lab environments.</td>
+          <td>Bundle signature + chain-of-custody log.</td>
+          <td>Scheduled sneakernet rotation.</td>
+        </tr>
+        <tr>
+          <td>internal mirror<span class="why">customer-hosted hub</span></td>
+          <td>Customer runs a self-hosted hub mirror. Authors publish there; agents fetch locally only.</td>
+          <td>Bundle signature + mirror trust policy.</td>
+          <td>Mirror sync job (or manual).</td>
+        </tr>
+        <tr>
+          <td>OCI / package registry<span class="why">existing infra</span></td>
+          <td>Treat the .mcpb as an artifact in OCI, Artifactory, or similar.</td>
+          <td>Bundle signature + registry policy.</td>
+          <td>Existing CI/CD pull paths.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- COMPOSITION DIAGRAM -->
+<section class="wrap">
+  <p class="eyebrow">04 · composition diagram</p>
+  <h2>Components plug into a shared contract bus.</h2>
+  <p>The middle of the system is not a service — it is a set of contracts: <strong>signed bundle</strong>, <strong>lease + policy</strong>, <strong>meter event</strong>, <strong>ledger row</strong>, <strong>pricing rule</strong>. Anything that speaks a contract can replace anything else that speaks the same contract.</p>
+
+  <div class="svg-wrap" style="margin-top:22px;">
+    <svg viewBox="0 0 1180 460" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Composition diagram">
+      <!-- Bus rail -->
+      <rect x="40" y="210" width="1100" height="40" rx="8" class="box" />
+      <text x="60" y="234" class="title">CONTRACT BUS</text>
+      <text x="220" y="234" class="label">signed-bundle · lease+policy · meter-event · ledger-row · pricing-rule · entitlement</text>
+
+      <!-- Top row: provider-side components -->
+      <g>
+        <rect x="60" y="60" width="170" height="110" rx="6" class="signer-fill" />
+        <text x="76" y="88" class="title">Signer</text>
+        <text x="76" y="108" class="label">Ed25519 signing</text>
+        <text x="76" y="126" class="label">manifest hash</text>
+        <text x="76" y="144" class="label">@skillpack/crypto</text>
+
+        <rect x="250" y="60" width="170" height="110" rx="6" class="leaser-fill" />
+        <text x="266" y="88" class="title">Leaser</text>
+        <text x="266" y="108" class="label">/v1/leases/issue</text>
+        <text x="266" y="126" class="label">/v1/policies/sync</text>
+        <text x="266" y="144" class="label">apps/api</text>
+
+        <rect x="440" y="60" width="170" height="110" rx="6" class="ledger-fill" />
+        <text x="456" y="88" class="title">Ledger</text>
+        <text x="456" y="108" class="label">accepted usage</text>
+        <text x="456" y="126" class="label">six-dim identity</text>
+        <text x="456" y="144" class="label">D1 / SQLite</text>
+
+        <rect x="630" y="60" width="170" height="110" rx="6" class="billing-fill" />
+        <text x="646" y="88" class="title">Billing</text>
+        <text x="646" y="108" class="label">pricing rules</text>
+        <text x="646" y="126" class="label">invoice draft</text>
+        <text x="646" y="144" class="label">handoff: Stripe/Dodo/manual</text>
+
+        <rect x="820" y="60" width="170" height="110" rx="6" class="hub-fill" />
+        <text x="836" y="88" class="title">Hub  (optional)</text>
+        <text x="836" y="108" class="label">discovery</text>
+        <text x="836" y="126" class="label">channels · semver</text>
+        <text x="836" y="144" class="label">substitutable</text>
+
+        <rect x="1010" y="60" width="130" height="110" rx="6" class="box" />
+        <text x="1024" y="88" class="title">Dashboard</text>
+        <text x="1024" y="108" class="label">BFF, Clerk</text>
+        <text x="1024" y="126" class="label">apps/dashboard</text>
+      </g>
+
+      <!-- Edges top → bus -->
+      <path class="edge" d="M145,170 L145,210" />
+      <path class="edge" d="M335,170 L335,210" />
+      <path class="edge" d="M525,170 L525,210" />
+      <path class="edge" d="M715,170 L715,210" />
+      <path class="edge dashed" d="M905,170 L905,210" />
+      <path class="edge dashed" d="M1075,170 L1075,210" />
+
+      <!-- Bottom: customer side -->
+      <g>
+        <rect x="60" y="290" width="200" height="120" rx="6" class="runtime-fill" />
+        <text x="76" y="318" class="title">Runtime (in .mcpb)</text>
+        <text x="76" y="338" class="label">verify lease</text>
+        <text x="76" y="356" class="label">enforce TTL + grace</text>
+        <text x="76" y="374" class="label">append meter chain</text>
+        <text x="76" y="392" class="label">@skillpack/runtime</text>
+
+        <rect x="280" y="290" width="200" height="120" rx="6" class="box" />
+        <text x="296" y="318" class="title">Local meter client</text>
+        <text x="296" y="338" class="label">lease+policy cache</text>
+        <text x="296" y="356" class="label">sync routing</text>
+        <text x="296" y="374" class="label">inside .mcpb</text>
+
+        <rect x="500" y="290" width="200" height="120" rx="6" class="gateway-fill" />
+        <text x="516" y="318" class="title">Edge Gateway</text>
+        <text x="516" y="338" class="label">site-level intake</text>
+        <text x="516" y="356" class="label">offline queue</text>
+        <text x="516" y="374" class="label">one approved egress</text>
+        <text x="516" y="392" class="label">optional · apps/edge</text>
+
+        <rect x="720" y="290" width="200" height="120" rx="6" class="box" />
+        <text x="736" y="318" class="title">Delivery channel</text>
+        <text x="736" y="338" class="label">hub · file · mail · USB</text>
+        <text x="736" y="356" class="label">OCI · internal mirror</text>
+        <text x="736" y="374" class="label">substitutable</text>
+
+        <rect x="940" y="290" width="200" height="120" rx="6" class="box" />
+        <text x="956" y="318" class="title">CLI</text>
+        <text x="956" y="338" class="label">@skillpack/cli</text>
+        <text x="956" y="356" class="label">talks to every</text>
+        <text x="956" y="374" class="label">component</text>
+      </g>
+
+      <!-- Edges bottom → bus -->
+      <path class="edge" d="M160,290 L160,250" />
+      <path class="edge" d="M380,290 L380,250" />
+      <path class="edge dashed" d="M600,290 L600,250" />
+      <path class="edge dashed" d="M820,290 L820,250" />
+      <path class="edge" d="M1040,290 L1040,250" />
+
+      <!-- Legend -->
+      <g transform="translate(40,432)">
+        <text class="label" x="0" y="0">— solid: required path · — — dashed: optional / substitutable</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+<!-- COMPOSITIONS -->
+<section id="compositions" class="wrap">
+  <p class="eyebrow">05 · example compositions</p>
+  <h2>Same components. Four different deployments.</h2>
+  <p style="max-width:780px;">No fork. No new code. Just choose which components you run, and which channel moves the bytes.</p>
+
+  <div class="compose-grid" style="margin-top:24px;">
+    <div class="compose">
+      <span class="tag">A · hosted full stack</span>
+      <h3>Vendor sells SaaS-style, customers connect</h3>
+      <p style="margin:0;">All provider-side components run on skillpack hosted. Hub publishes. Runtime pulls by entitlement. Direct upload to ledger.</p>
+      <div class="chain">
+        <span class="node" style="--c:var(--signer)">signer</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--leaser)">leaser</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--hub)">hub</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--runtime)">runtime</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--ledger)">ledger</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--billing)">billing</span>
+      </div>
+    </div>
+
+    <div class="compose">
+      <span class="tag">B · self-hosted vendor</span>
+      <h3>Vendor runs the leaser, no hub</h3>
+      <p style="margin:0;">Vendor self-hosts leaser + ledger + billing in their own infra. Skills ship by direct download from the vendor site. No hub anywhere.</p>
+      <div class="chain">
+        <span class="node" style="--c:var(--signer)">signer</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--leaser)">leaser <small>(self)</small></span><span class="arrow">→</span>
+        <span class="node opt" style="--c:var(--hub)">(no hub)</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--runtime)">runtime</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--ledger)">ledger <small>(self)</small></span>
+      </div>
+    </div>
+
+    <div class="compose">
+      <span class="tag">C · air-gapped customer</span>
+      <h3>USB-delivered, gateway-synced</h3>
+      <p style="margin:0;">Skill ships via sealed USB. Customer site runs an edge gateway. Meter uploads go to the gateway, then batched out on a scheduled sync window. Leaser is reachable through one approved egress.</p>
+      <div class="chain">
+        <span class="node" style="--c:var(--signer)">signer</span><span class="arrow">→</span>
+        <span class="node opt" style="--c:var(--ink-3)">USB</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--runtime)">runtime</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--gateway)">edge gateway</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--leaser)">leaser</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--ledger)">ledger</span>
+      </div>
+    </div>
+
+    <div class="compose">
+      <span class="tag">D · internal-only enterprise</span>
+      <h3>Customer-hosted hub mirror</h3>
+      <p style="margin:0;">Customer runs a self-hosted hub mirror that talks to the vendor leaser. Internal authors publish to the mirror; nothing leaks out. Per-tool entitlements gated by the customer's own SSO.</p>
+      <div class="chain">
+        <span class="node" style="--c:var(--signer)">signer</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--hub)">hub mirror <small>(self)</small></span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--runtime)">runtime</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--leaser)">leaser</span><span class="arrow">→</span>
+        <span class="node" style="--c:var(--ledger)">ledger</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PERSONAS -->
+<section id="people" class="wrap">
+  <p class="eyebrow">06 · the three people who must win</p>
+  <h2>Creator. Leasee. User. None of them win today.</h2>
+  <p style="max-width:780px;">A skill only becomes a real economy when all three are rewarded by the same loop. Below: who they are, what they want, what they get today, and what changes when the loop closes.</p>
+
+  <div class="persona-grid" style="margin-top:30px;">
+    <article class="persona creator">
+      <header>
+        <div class="avatar"><span>M</span></div>
+        <div>
+          <h3>Maya · Skill Creator</h3>
+          <div class="sub">Solo specialist · 12 yrs commercial-contracts attorney · ships one skill</div>
+        </div>
+      </header>
+      <div class="lanes">
+        <div class="lane">
+          <h4>Wants</h4>
+          <ul>
+            <li>Royalties when her skill runs anywhere.</li>
+            <li>Attribution that survives forks.</li>
+            <li>Channel to push a fix the same day she writes it.</li>
+            <li>IP protection — her prompts, her clause library.</li>
+            <li>Proof of quality buyers can trust.</li>
+          </ul>
+        </div>
+        <div class="lane today">
+          <h4>Today</h4>
+          <ul>
+            <li>Publishes a <span class="mono">.md</span> file on GitHub.</li>
+            <li>Zero royalty. Zero usage signal.</li>
+            <li>Forked silently, embedded into vendor agents.</li>
+            <li>No update path. Can't fix the v0.3 bug at the firm using her v0.1.</li>
+          </ul>
+        </div>
+        <div class="lane wins">
+          <h4>With skillpack</h4>
+          <ul>
+            <li>Signs the bundle. Provenance is hers.</li>
+            <li>Ledger shows every accepted tool call by leasee, workspace, tool.</li>
+            <li>Pricing rule + payout per call (later: per outcome).</li>
+            <li>Push a patched <span class="mono">.mcpb</span>; entitled seats fetch on next launch.</li>
+            <li>Signed eval suite travels with the bundle.</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <article class="persona leasee">
+      <header>
+        <div class="avatar"><span>K</span></div>
+        <div>
+          <h3>Kuro · Skill Leasee</h3>
+          <div class="sub">IT + procurement lead · mid-size law firm · 240 lawyers · regulated data</div>
+        </div>
+      </header>
+      <div class="lanes">
+        <div class="lane">
+          <h4>Wants</h4>
+          <ul>
+            <li>Vetted skills with provable provenance.</li>
+            <li>Per-seat, per-tool entitlements he controls.</li>
+            <li>Audit log for compliance and incident review.</li>
+            <li>Predictable cost; no surprise overages.</li>
+            <li>Air-gap-compatible. Skills run inside the firm.</li>
+          </ul>
+        </div>
+        <div class="lane today">
+          <h4>Today</h4>
+          <ul>
+            <li>Markdown skills pasted into chat. No idea who wrote them.</li>
+            <li>No way to revoke without breaking a lawyer's day.</li>
+            <li>No usage analytics, no procurement story.</li>
+            <li>Cloud-only vendors blocked by client confidentiality.</li>
+          </ul>
+        </div>
+        <div class="lane wins">
+          <h4>With skillpack</h4>
+          <ul>
+            <li>Leases by workspace + seat. Entitlements per tool.</li>
+            <li>Skills delivered by hub, internal mirror, or USB — his choice.</li>
+            <li>Local meter chain → his audit log.</li>
+            <li>Lease + 72h grace = humane kill-switch, no broken Mondays.</li>
+            <li>Self-hosted leaser keeps every byte inside the firm.</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <article class="persona user">
+      <header>
+        <div class="avatar"><span>P</span></div>
+        <div>
+          <h3>Priya · Skill User</h3>
+          <div class="sub">Senior associate · uses an agent daily · doesn't want to think about licensing</div>
+        </div>
+      </header>
+      <div class="lanes">
+        <div class="lane">
+          <h4>Wants</h4>
+          <ul>
+            <li>The skill works. Today. In her agent.</li>
+            <li>Latest version, no manual update step.</li>
+            <li>Trust the answer — citations, version, author.</li>
+            <li>No "vendor is down" excuses on a Friday filing.</li>
+          </ul>
+        </div>
+        <div class="lane today">
+          <h4>Today</h4>
+          <ul>
+            <li>Pastes prompts she copied from a colleague's chat.</li>
+            <li>Different lawyers running different versions silently.</li>
+            <li>No idea if the clause comes from a vetted source.</li>
+            <li>Cloud outage means her skill stops mid-draft.</li>
+          </ul>
+        </div>
+        <div class="lane wins">
+          <h4>With skillpack</h4>
+          <ul>
+            <li>Agent fetches her entitled skills on launch. She sees nothing.</li>
+            <li>Runs locally. Cloud outage = grace window, work continues.</li>
+            <li>Every answer carries skill ID + version in the agent UI.</li>
+            <li>If Maya pushes a fix, Priya gets it next session.</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+  </div>
+</section>
+
+<!-- NARRATIVE: ONE BUNDLE, THREE VIEWS -->
+<section id="story" class="wrap">
+  <p class="eyebrow">07 · one signed bundle, three points of view</p>
+  <h2>The same .mcpb, told three times.</h2>
+  <p style="max-width:780px;">Follow one signed bundle — Maya's <span class="mono">contract-review@1.4.0</span> — from the moment she signs it through the moment Priya's agent invokes a tool. Each column is the same five moments, told from each persona's seat.</p>
+
+  <div class="story" style="margin-top:26px;">
+    <div class="story-head">
+      <div></div>
+      <div class="col-head creator-col">Maya · Creator</div>
+      <div class="col-head leasee-col">Kuro · Leasee</div>
+      <div class="col-head user-col">Priya · User</div>
+    </div>
+
+    <div class="story-row">
+      <div class="moment"><b>T-0</b>Publish</div>
+      <div class="cell">Runs <span class="mono">skillpack bundle build</span>. Bundle signed with her key. Eval suite attached. Pushed to a channel (stable). Hub gets a release notice; she could also email it.</div>
+      <div class="cell muted">—</div>
+      <div class="cell muted">—</div>
+    </div>
+
+    <div class="story-row">
+      <div class="moment"><b>T+1d</b>Procure</div>
+      <div class="cell">Sees pending entitlement request in dashboard. Approves Kuro's workspace for <span class="mono">contract-review</span>, tools <span class="mono">redline</span> + <span class="mono">extract_clauses</span>, channel stable.</div>
+      <div class="cell">Reviews the eval badge, the public key fingerprint, the lawyer-reviewable changelog. Procurement signs. Pricing rule attached at $0.18/call.</div>
+      <div class="cell muted">—</div>
+    </div>
+
+    <div class="story-row">
+      <div class="moment"><b>T+2d</b>Install</div>
+      <div class="cell muted">—</div>
+      <div class="cell">Kuro picks delivery: firm-internal hub mirror. Bundle replicated overnight. Per-seat entitlements pushed to the leaser.</div>
+      <div class="cell">Priya's agent starts. Lease lists <span class="mono">contract-review@1.4.0</span>. Runtime pulls from internal mirror, verifies signature + SHA256, swaps in. She sees a new tool in her sidebar.</div>
+    </div>
+
+    <div class="story-row">
+      <div class="moment"><b>T+3d</b>Use</div>
+      <div class="cell muted">—</div>
+      <div class="cell">Audit log fills with tool-call rows: seat · tool · timestamp · lease. Compliance is happy. Internet drops at lunch; grace period covers it.</div>
+      <div class="cell">Redlines a 47-page master services agreement. Skill returns clause extractions with author + version in the citation. Filing goes out Friday.</div>
+    </div>
+
+    <div class="story-row">
+      <div class="moment"><b>T+7d</b>Reward</div>
+      <div class="cell">Edge gateway uploads meter batches. Ledger accepts 1,284 calls for Kuro's workspace. Billing draft generated. Maya's payout: <strong>$231.12</strong> minus platform fee. Reputation score on hub +1.4. Her v1.4 is now top of the stable channel.</div>
+      <div class="cell">Receives invoice from skillpack (or from Maya direct, if self-hosted). Reconciliation against his audit log line-by-line. No dispute.</div>
+      <div class="cell">Doesn't think about any of this. Next session, Maya has shipped v1.4.1 with a fix for a Singapore-clause edge case. Priya's agent picks it up. She doesn't notice.</div>
+    </div>
+  </div>
+</section>
+
+<!-- INCENTIVE FLYWHEEL -->
+<section id="incentive" class="wrap">
+  <p class="eyebrow">08 · what the creator actually gets</p>
+  <h2>Five rewards. One flywheel. Each spin compounds.</h2>
+  <p style="max-width:780px;">Money is the obvious one and not the only one. The platform rewards the creator on five axes; each strengthens the next. None of it requires the creator to be a company, run a server, or chase invoices.</p>
+
+  <div class="flywheel-wrap" style="margin-top:28px;">
+    <div class="flywheel-svg">
+      <svg viewBox="0 0 560 560" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Creator incentive flywheel">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
+          </marker>
+        </defs>
+        <circle cx="280" cy="280" r="200" fill="none" stroke="var(--line-2)" stroke-dasharray="4 6" />
+        <text x="280" y="284" text-anchor="middle" font-family="var(--serif)" font-size="22" fill="var(--ink)" font-weight="600">creator</text>
+        <text x="280" y="312" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="var(--ink-3)" letter-spacing="2">FLYWHEEL</text>
+
+        <!-- 5 nodes around circle -->
+        <g class="fw-node" transform="translate(280,40)">
+          <circle r="46" class="leaser-fill" />
+          <text y="-2" text-anchor="middle" font-family="var(--sans)" font-size="13" fill="var(--ink)" font-weight="600">Royalty</text>
+          <text y="16" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink-2)">per call · per outcome</text>
+        </g>
+        <g class="fw-node" transform="translate(490,200)">
+          <circle r="46" class="hub-fill" />
+          <text y="-2" text-anchor="middle" font-family="var(--sans)" font-size="13" fill="var(--ink)" font-weight="600">Reputation</text>
+          <text y="16" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink-2)">eval badge · ranking</text>
+        </g>
+        <g class="fw-node" transform="translate(410,470)">
+          <circle r="46" class="ledger-fill" />
+          <text y="-2" text-anchor="middle" font-family="var(--sans)" font-size="13" fill="var(--ink)" font-weight="600">Signal</text>
+          <text y="16" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink-2)">tool-level usage</text>
+        </g>
+        <g class="fw-node" transform="translate(150,470)">
+          <circle r="46" class="signer-fill" />
+          <text y="-2" text-anchor="middle" font-family="var(--sans)" font-size="13" fill="var(--ink)" font-weight="600">Control</text>
+          <text y="16" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink-2)">IP · update · revoke</text>
+        </g>
+        <g class="fw-node" transform="translate(70,200)">
+          <circle r="46" class="runtime-fill" />
+          <text y="-2" text-anchor="middle" font-family="var(--sans)" font-size="13" fill="var(--ink)" font-weight="600">Reach</text>
+          <text y="16" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink-2)">channels · mirrors</text>
+        </g>
+
+        <!-- arrows around -->
+        <g stroke="var(--line-2)" stroke-width="1.4" fill="none" color="var(--ink-3)" marker-end="url(#arr)">
+          <path d="M325,72 A200,200 0 0 1 446,170" />
+          <path d="M482,250 A200,200 0 0 1 446,395" />
+          <path d="M380,470 A200,200 0 0 1 200,470" />
+          <path d="M120,420 A200,200 0 0 1 78,250" />
+          <path d="M110,170 A200,200 0 0 1 240,68" />
+        </g>
+      </svg>
+    </div>
+
+    <div class="flywheel-list">
+      <div class="reward">
+        <span class="ix" style="background:var(--leaser)"></span>
+        <div>
+          <h4>Royalty</h4>
+          <p>Every accepted tool call in the ledger turns into a payout against a pricing rule. Per-call today; per-outcome later. Royalty splits across co-authors land in H5.</p>
+        </div>
+      </div>
+      <div class="reward">
+        <span class="ix" style="background:var(--hub)"></span>
+        <div>
+          <h4>Reputation</h4>
+          <p>Signed eval suites attached to the bundle generate badges. The hub ranks skills by independently-attested quality, not stars. Maya's v1.4 climbs because her evals pass on real buyer corpora.</p>
+        </div>
+      </div>
+      <div class="reward">
+        <span class="ix" style="background:var(--ledger)"></span>
+        <div>
+          <h4>Signal</h4>
+          <p>For the first time, the creator sees which tool is used, by what kind of workspace, how often. That signal points her to v1.5 — and tells her which 30% of the skill nobody touches.</p>
+        </div>
+      </div>
+      <div class="reward">
+        <span class="ix" style="background:var(--signer)"></span>
+        <div>
+          <h4>Control</h4>
+          <p>Signing proves authorship. Lease + grace means she can stop renewing without breaking a lawyer's day. Bundle archives knowledge sealed — no plain markdown leaking.</p>
+        </div>
+      </div>
+      <div class="reward">
+        <span class="ix" style="background:var(--runtime)"></span>
+        <div>
+          <h4>Reach</h4>
+          <p>Hub publishes for discovery. Internal mirrors carry the skill into firms that would never have found her. File, email, USB all carry the same signed artifact. The skill travels; the contract follows.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="incentive-foot">
+    <p style="max-width:780px;"><strong>The flywheel.</strong> Reach → more meter events → more signal → better v-next → higher eval score → more reputation → bigger channel placement → more reach. Royalty rides every step. The creator never has to operate a server, chase an invoice, or beg a buyer for usage numbers.</p>
+  </div>
+</section>
+
+<!-- NORTH STAR -->
+<section class="wrap">
+  <p class="eyebrow">09 · north star</p>
+  <h2>One sentence to test every decision against.</h2>
+  <div class="pull" style="font-size:clamp(24px,3vw,36px);">
+    A skill is software. The person who built it should be paid every time it runs —
+    in regulated, offline, sovereign environments where "phone home" is not an option,
+    on a platform small enough that any operator can run any component themselves,
+    and composable enough that the hub is one option among many.
+  </div>
+  <p style="margin-top:22px;">If a feature can't be drawn as a single component with a sharp contract, or it breaks self-host parity, or it forces the hub and the leaser into the same process — it doesn't ship.</p>
+</section>
+
+<footer>
+  <div class="wrap row">
+    <div>skillpack · vision · composable · 2026 → 2027</div>
+    <div>open-core · self-host parity · <span style="color:var(--leaser)">●</span> shipping</div>
+  </div>
+</footer>
+
+</body>
+</html>
