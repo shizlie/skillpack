@@ -579,8 +579,9 @@
 <!-- COMPONENTS -->
 <section id="components" class="wrap">
   <p class="eyebrow">02 · component catalog</p>
-  <h2>Nine components. Sharp contracts. Independently shippable.</h2>
+  <h2>Ten components. Sharp contracts. Independently shippable.</h2>
   <p style="max-width:760px;">Each tile is a separately versioned, separately deployable piece. The ports column shows the contract it exposes. The status row shows where it sits today and where it is going mid-term.</p>
+  <p style="max-width:760px;color:var(--ink-2);font-size:14px;"><strong>Identity convention.</strong> Every first-class entity (provider, customer, workspace, seat, skill, bundle, lease, invoice) carries two names: an opaque <span class="mono">id</span> (stable forever, used by APIs and audit logs) and a human-readable <span class="mono">display_name</span> (editable, shown in every UI surface — Maya's dashboard, Kuro's receipts, Priya's agent confirmations, invoice PDFs, email notifications). Internal IDs never leak into UI copy. This is a contract, not a style choice.</p>
 
   <div class="comp-grid" style="margin-top:28px;">
 
@@ -751,16 +752,36 @@
         <span class="pkg">apps/dashboard · Clerk</span>
       </div>
       <div class="body">
-        <p class="role">Hosted operator UI for the leaser, ledger, billing. BFF, not a re-implementation of the API. Designed to also run partly detached: inspect signed artifacts, exported state, cached data — without round-tripping to hosted.</p>
+        <p class="role">Hosted operator UI for the leaser, ledger, billing. BFF, not a re-implementation of the API. Designed to also run partly detached: inspect signed artifacts, exported state, cached data — without round-tripping to hosted. Landing surfaces a row of operational chips — <em>leases expiring 7d</em>, <em>TSA expired</em>, <em>sync stale &gt;24h</em>, <em>invoices draft</em>, <em>synthesis proposals pending</em> — each a real-time count that drills into a pre-filtered table. Zero counts hide. Maya scans in five seconds; she does not hunt.</p>
         <div class="ports">
           <div class="port"><span class="dir">in</span><span>Clerk session · operator action</span></div>
-          <div class="port"><span class="dir">out</span><span>proxied API calls · rendered views</span></div>
+          <div class="port"><span class="dir">out</span><span>proxied API calls · rendered views · ops chip counts</span></div>
           <div class="port"><span class="dir">contract</span><span>HTTP proxy, no service bindings (v1)</span></div>
         </div>
       </div>
       <div class="foot">
-        <span class="status">status · <b>shipping</b></span>
+        <span class="status">status · <b>shipping → ops chips + display names (next)</b></span>
         <span>optional</span>
+      </div>
+    </article>
+
+    <article class="comp ledger">
+      <div class="head">
+        <span class="swatch"></span>
+        <span class="title">Synthesizer</span>
+        <span class="pkg">new · apps/synth (h3)</span>
+      </div>
+      <div class="body">
+        <p class="role">Closes the loop from usage back into knowledge. A scheduled LLM job that clusters recurring tool-call patterns and wiki query patterns in the ledger, then proposes L2 synthesis pages — the gaps the corpus is asking for. Creator (Maya) curates, the eval gate verifies, and the page ships as part of the next bundle release. The wiki stops being static markdown and starts being a living artifact that grows where buyers actually use it. Killswitched, cost-capped, and audit-logged with citations back to the raw events that motivated each proposal.</p>
+        <div class="ports">
+          <div class="port"><span class="dir">in</span><span>ledger rows · wiki query log · LLM budget</span></div>
+          <div class="port"><span class="dir">out</span><span>synthesis proposals · cited raw sources · eval scores</span></div>
+          <div class="port"><span class="dir">contract</span><span>/v1/synthesis/proposals · /v1/synthesis/apply · SRE audit events</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="status">status · <b>planned · h3</b></span>
+        <span>optional · creator-gated</span>
       </div>
     </article>
 
@@ -1286,6 +1307,7 @@
 
   <div class="incentive-foot">
     <p style="max-width:780px;"><strong>The flywheel.</strong> Reach → more meter events → more signal → better v-next → higher eval score → more reputation → bigger channel placement → more reach. Royalty rides every step. The creator never has to operate a server, chase an invoice, or beg a buyer for usage numbers.</p>
+    <p style="max-width:780px;margin-top:18px;"><strong>The emerging sixth: Synthesis.</strong> Once the ledger has enough signal, the Synthesizer component starts proposing the L2 pages buyers are implicitly asking for — clusters of recurring tool calls and unanswered wiki queries become draft pages that Maya curates instead of authors from scratch. Every spin of the flywheel makes the next page faster to write and more likely to be the one buyers actually need. Knowledge compounds, not just revenue.</p>
   </div>
 </section>
 
