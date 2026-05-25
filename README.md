@@ -72,7 +72,11 @@ Full design: `~/.gstack/projects/hcproduct-verticalAI/baoharryngo-master-design-
 
 ## License
 
-Open core. Runtime + CLI: open source (Apache 2.0 planned). Hosted license server + dashboard: source-available, commercial.
+Skillpack is open source software licensed under the Apache License, Version 2.0.
+
+Commercial Skillpack-operated services, enterprise support, proprietary add-ons,
+and trademark permissions may be offered separately. See `COMMERCIAL.md` and
+`TRADEMARKS.md`.
 
 ---
 
