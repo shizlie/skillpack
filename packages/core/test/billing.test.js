@@ -487,3 +487,48 @@ test("billing provider: stripe refuses checkout when invoice has no payable line
     })
   ).rejects.toThrow(/invoice_has_no_payable_lines/);
 });
+test("GET /v1/billing/invoices/:id returns the drafted invoice", async () => {
+  const fetch = makeHandler({ leaseStore: createSqliteLeaseStore() });
+  const headers = { "content-type": "application/json", "x-api-key": "mgmt-key" };
+
+  // Draft an invoice (no usage/pricing rules needed — empty invoice is fine)
+  const draftRes = await fetch(
+    new Request("http://local/v1/billing/invoices/draft", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        invoiceId: "inv-get-test",
+        providerId: "prov-1",
+        customerId: "cust-1",
+        periodStartSec: 1_800_000_000,
+        periodEndSec: 1_800_001_000,
+      }),
+    })
+  );
+  expect(draftRes.status).toBe(200);
+  const { invoice: drafted } = await draftRes.json();
+  expect(drafted.invoiceId).toBe("inv-get-test");
+
+  // GET /v1/billing/invoices/:id — returns the same invoice
+  const getRes = await fetch(
+    new Request("http://local/v1/billing/invoices/inv-get-test", {
+      method: "GET",
+      headers,
+    })
+  );
+  expect(getRes.status).toBe(200);
+  const { invoice } = await getRes.json();
+  expect(invoice.invoiceId).toBe("inv-get-test");
+  expect(invoice.providerId).toBe("prov-1");
+  expect(invoice.customerId).toBe("cust-1");
+
+  // GET with a nonexistent id — 404
+  const notFoundRes = await fetch(
+    new Request("http://local/v1/billing/invoices/inv-does-not-exist", {
+      method: "GET",
+      headers,
+    })
+  );
+  expect(notFoundRes.status).toBe(404);
+  expect((await notFoundRes.json()).error).toBe("invoice_not_found");
+});

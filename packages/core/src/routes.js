@@ -20,6 +20,7 @@ import {
   validateWorkspaceCreateContract,
 } from "@skillpack/protocol";
 import { draftInvoiceFromUsage } from "./billing.js";
+import { verifyManagementKey } from "./auth.js";
 
 const DEFAULT_TTL_SEC = 30 * 24 * 60 * 60;
 const DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC = 4 * 60 * 60;
@@ -73,28 +74,10 @@ function tryDirectLeaseAuth(request, signingPublicKeyPem, nowSec) {
  * Returns { status, body } on failure, null on success.
  */
 async function checkManagementAuth(ctx) {
-  const { managementAuthenticator, managementApiKey, request } = ctx;
-  if (typeof managementAuthenticator === "function") {
-    try {
-      return (await managementAuthenticator(request)) === true
-        ? null
-        : { status: 401, body: { error: "unauthorized" } };
-    } catch {
-      return { status: 401, body: { error: "unauthorized" } };
-    }
-  }
-  if (!managementApiKey) {
-    return { status: 503, body: { error: "management_api_key_not_configured" } };
-  }
-  const providedApiKey = request.headers.get("x-api-key") ?? request.headers.get("X-Api-Key");
-  if (typeof providedApiKey !== "string" || providedApiKey.length !== managementApiKey.length) {
-    return { status: 401, body: { error: "unauthorized" } };
-  }
-  const h = (k) => crypto.createHash("sha256").update(k).digest();
-  if (!crypto.timingSafeEqual(h(providedApiKey), h(managementApiKey))) {
-    return { status: 401, body: { error: "unauthorized" } };
-  }
-  return null;
+  return verifyManagementKey(ctx.request, {
+    managementApiKey: ctx.managementApiKey,
+    managementAuthenticator: ctx.managementAuthenticator,
+  });
 }
 
 // --- Path matcher ---
@@ -431,6 +414,14 @@ async function listInvoices(ctx) {
   }
 }
 
+async function getInvoice(ctx) {
+  const invoice = await ctx.store.getInvoice(ctx.params.id);
+  if (!invoice) {
+    return { status: 404, body: { error: "invoice_not_found" } };
+  }
+  return { body: { invoice } };
+}
+
 async function createPaymentHandoff(ctx) {
   try {
     const invoiceId = ctx.params.id;
@@ -491,11 +482,6 @@ async function getLatestManualAttestation(ctx) {
   }
 }
 
-function placeholder(name) {
-  return async () => {
-    throw new Error(`route_not_implemented:${name}`);
-  };
-}
 
 export const routes = [
   { method: "GET",  path: "/healthz",                                        handler: async () => ({ body: { ok: true, service: "license-server" } }) },
@@ -514,7 +500,7 @@ export const routes = [
   { method: "GET",  path: "/v1/billing/pricing-rules",                       management: true, handler: listPricingRules },
   { method: "POST", path: "/v1/billing/invoices/draft",                      management: true, handler: draftInvoice },
   { method: "GET",  path: "/v1/billing/invoices",                            management: true, handler: listInvoices },
-  { method: "GET",  path: "/v1/billing/invoices/:id",                        management: true, handler: placeholder("billing.invoices.get") },
+  { method: "GET",  path: "/v1/billing/invoices/:id",                        management: true, handler: getInvoice },
   { method: "POST", path: "/v1/billing/invoices/:id/payment-handoff",        management: true, handler: createPaymentHandoff },
   { method: "POST", path: "/v1/meter/upload",                                                  handler: uploadMeter },
   { method: "POST", path: "/v1/tsa/manual-attest",                           management: true, handler: manualAttest },
