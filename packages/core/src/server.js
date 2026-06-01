@@ -23,6 +23,7 @@ import { createManualTimeAttestationContract, createTsaMonitor } from "@skillpac
 import { draftInvoiceFromUsage } from "./billing.js";
 import { createPaymentProviderRegistry } from "./payment-providers.js";
 import { createInMemoryLeaseStore } from "./storage.js";
+import { matchRoute, routes } from "./routes.js";
 
 const DEFAULT_TTL_SEC = 30 * 24 * 60 * 60;
 const DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC = 4 * 60 * 60;
@@ -170,6 +171,35 @@ function parsePositiveInteger(value, errorCode) {
   return value;
 }
 
+function jsonResponse({ status = 200, body } = {}) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function errorResponse(status, error) {
+  return jsonResponse({ status, body: { error } });
+}
+
+function findRoute(method, pathname) {
+  for (const route of routes) {
+    if (route.method !== method) continue;
+    const result = matchRoute(route.path, pathname);
+    if (result.matches) return { route, params: result.params };
+  }
+  return null;
+}
+
+function isManagementMatched(method, pathname) {
+  for (const route of routes) {
+    if (!route.management) continue;
+    if (route.method !== method) continue;
+    if (matchRoute(route.path, pathname).matches) return true;
+  }
+  return false;
+}
+
 export function createLicenseFetchHandler({
   signingPrivateKeyPem,
   signingPublicKeyPem,
@@ -188,7 +218,7 @@ export function createLicenseFetchHandler({
     const url = new URL(request.url);
     const nowSec = Math.floor(Date.now() / 1000);
 
-    if (isManagementRoute(request, url.pathname)) {
+    if (isManagementMatched(request.method, url.pathname)) {
       const authError = await authenticateManagementRequest(request, {
         managementApiKey,
         managementAuthenticator,
@@ -196,448 +226,39 @@ export function createLicenseFetchHandler({
       if (authError) return authError;
     }
 
-    if (request.method === "GET" && url.pathname === "/healthz") {
-      return json({ ok: true, service: "license-server" });
-    }
+    const found = findRoute(request.method, url.pathname);
+    if (!found) return errorResponse(404, "not_found");
 
-    if (request.method === "POST" && url.pathname === "/v1/providers") {
+    const { route, params } = found;
+    const ctx = {
+      store: leaseStore,
+      providers: paymentProviders,
+      tsaMonitor,
+      attestationContract,
+      request,
+      url,
+      nowSec,
+      params,
+      body: null,
+    };
+    if (request.method !== "GET" && request.method !== "HEAD") {
       try {
-        const body = await readBody(request);
-        const provider = validateProviderCreateContract(body);
-        const saveProvider = getStoreMethod(leaseStore, "saveProvider");
-        const saved = await saveProvider(provider);
-        return json({ accepted: true, provider: saved });
+        ctx.body = await readBody(request);
       } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
+        return errorResponse(400, error.message);
       }
     }
 
-    if (request.method === "GET" && url.pathname === "/v1/providers") {
-      try {
-        const listProviders = getStoreMethod(leaseStore, "listProviders");
-        const providers = await listProviders();
-        return json({ providers });
-      } catch (error) {
-        return json({ error: error.message }, 400);
+    try {
+      const result = await route.handler(ctx);
+      if (result instanceof Response) return result;
+      return jsonResponse(result);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("route_not_implemented")) {
+        return errorResponse(500, error.message);
       }
+      return errorResponse(500, error instanceof Error ? error.message : "internal_error");
     }
-
-    const providerIdForCustomerRoute = getProviderIdForCustomerRoute(url.pathname);
-    if (request.method === "POST" && providerIdForCustomerRoute) {
-      try {
-        const body = await readBody(request);
-        const customer = validateCustomerCreateContract(body);
-        const saveCustomer = getStoreMethod(leaseStore, "saveCustomer");
-        const saved = await saveCustomer(providerIdForCustomerRoute, customer);
-        return json({ accepted: true, customer: saved });
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "GET" && providerIdForCustomerRoute) {
-      try {
-        const listCustomers = getStoreMethod(leaseStore, "listCustomers");
-        const customers = await listCustomers(providerIdForCustomerRoute);
-        return json({ customers });
-      } catch (error) {
-        return json({ error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/v1/workspaces") {
-      try {
-        const body = await readBody(request);
-        const workspace = validateWorkspaceCreateContract(body);
-        const saveWorkspace = getStoreMethod(leaseStore, "saveWorkspace");
-        const saved = await saveWorkspace(workspace);
-        return json({ accepted: true, workspace: saved });
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "GET" && url.pathname === "/v1/workspaces") {
-      try {
-        const listWorkspaces = getStoreMethod(leaseStore, "listWorkspaces");
-        const workspaces = await listWorkspaces({
-          providerId: url.searchParams.get("providerId") ?? undefined,
-          customerId: url.searchParams.get("customerId") ?? undefined,
-        });
-        return json({ workspaces });
-      } catch (error) {
-        return json({ error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/v1/leases/issue") {
-      try {
-        const body = await readBody(request);
-        const customerId = body.customerId;
-        const seatId = body.seatId ?? "default";
-        const vendorId = body.vendorId ?? "skillpack-vendor";
-        const iat = Number.isInteger(body.nowSec) ? body.nowSec : nowSec;
-        const ttlSec =
-          Number.isInteger(body.ttlSec) && body.ttlSec > 0
-            ? body.ttlSec
-            : DEFAULT_TTL_SEC;
-
-        if (typeof customerId !== "string" || customerId.length === 0) {
-          throw new Error("issue_missing_customer_id");
-        }
-        const previousCounter = await leaseStore.getLatestLeaseCounter(
-          customerId,
-          seatId
-        );
-        const nextCounter =
-          Number.isInteger(previousCounter) && previousCounter >= 0
-            ? previousCounter + 1
-            : 0;
-        assertMonotonicLeaseCounter(previousCounter, nextCounter);
-
-        const payload = {
-          iss: vendorId,
-          sub: customerId,
-          seatId,
-          iat,
-          exp: iat + ttlSec,
-          jti: crypto.randomUUID(),
-          leaseCounter: nextCounter,
-          providerId: body.providerId,
-          workspaceId: body.workspaceId,
-          skillId: body.skillId,
-          bundleId: body.bundleId,
-        };
-        validateLeasePayload(payload);
-        const hasDirectCommercialContext =
-          hasDirectLeaseCommercialField(body, "providerId") ||
-          hasDirectLeaseCommercialField(body, "workspaceId") ||
-          hasDirectLeaseCommercialField(body, "skillId") ||
-          hasDirectLeaseCommercialField(body, "bundleId");
-        if (hasDirectCommercialContext) {
-          validateDirectLeaseCommercialContext(payload);
-        }
-        const leaseToken = createLeaseToken(payload, signingPrivateKeyPem);
-        await leaseStore.updateLatestLeaseCounter(customerId, seatId, nextCounter);
-
-        let tsaState = null;
-        if (Number.isInteger(body.lastTsaTokenAtSec)) {
-          const evaluated = tsaMonitor.evaluate({
-            lastTsaTokenAtSec: body.lastTsaTokenAtSec,
-            nowSec: iat,
-          });
-          tsaState = {
-            ...evaluated,
-            lastTsaTokenAtSec: body.lastTsaTokenAtSec,
-          };
-          if (tsaState.status === "warning" || tsaState.status === "expired") {
-            const maxManualAttestationAgeSec =
-              parsePositiveInteger(
-                body.maxManualAttestationAgeSec,
-                "issue_invalid_max_manual_attestation_age"
-              ) ?? DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC;
-            const ticketId = body.tsaTicketId ?? body.ticketId;
-            const latestManualAttestation =
-              typeof ticketId === "string" && ticketId.length > 0
-                ? await leaseStore.getLatestManualAttestation(customerId, seatId, {
-                    ticketId,
-                  })
-                : null;
-            tsaState = {
-              ...tsaState,
-              latestManualAttestation,
-              maxManualAttestationAgeSec,
-            };
-          }
-        }
-
-        return json({ leaseToken, payload, tsaState });
-      } catch (error) {
-        return json({ error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/v1/leases/verify") {
-      try {
-        const body = await readBody(request);
-        const verified = verifyLeaseToken(body.leaseToken, signingPublicKeyPem, {
-          nowSec: Number.isInteger(body.nowSec) ? body.nowSec : nowSec,
-        });
-        const seatId = verified.seatId ?? "default";
-        const latest = await leaseStore.getLatestLeaseCounter(verified.sub, seatId);
-        if (
-          Number.isInteger(latest) &&
-          verified.leaseCounter < latest
-        ) {
-          throw new Error("lease_counter_rewind_detected");
-        }
-        if (!Number.isInteger(latest) || verified.leaseCounter > latest) {
-          await leaseStore.updateLatestLeaseCounter(
-            verified.sub,
-            seatId,
-            verified.leaseCounter
-          );
-        }
-        return json({ valid: true, payload: verified });
-      } catch (error) {
-        return json({ valid: false, error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/v1/policies/issue") {
-      try {
-        const body = await readBody(request);
-        const snapshot = validatePolicySnapshot(body.policy ?? body);
-        const savePolicySnapshot = getStoreMethod(leaseStore, "savePolicySnapshot");
-        const saved = await savePolicySnapshot(snapshot.workspaceId, snapshot);
-        return json({ accepted: true, policy: saved });
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/v1/policies/sync") {
-      try {
-        const body = await readBody(request);
-        const workspaceId = getRequiredString(
-          body,
-          "workspaceId",
-          "policy_sync_missing_workspace_id"
-        );
-        const policyId =
-          typeof body.policyId === "string" && body.policyId.length > 0
-            ? body.policyId
-            : null;
-        const getLatestPolicySnapshot = getStoreMethod(
-          leaseStore,
-          "getLatestPolicySnapshot"
-        );
-        const latest = await getLatestPolicySnapshot(workspaceId);
-        if (!latest) {
-          return json({ notModified: true });
-        }
-        if (policyId && latest.policyId === policyId) {
-          return json({ notModified: true });
-        }
-        return json({ notModified: false, policy: latest });
-      } catch (error) {
-        return json({ error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/v1/meter/upload") {
-      let validated;
-      let mode = "management";
-      let body;
-      try {
-        body = await readBody(request);
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
-      }
-
-      let directLease;
-      try {
-        directLease = authenticateDirectMeterUpload(request, signingPublicKeyPem, nowSec);
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 401);
-      }
-
-      try {
-        if (directLease) {
-          mode = "direct";
-          validated = validateDirectMeterUploadContract(body, {
-            providerId: directLease.providerId,
-            customerId: directLease.sub,
-            workspaceId: directLease.workspaceId,
-            seatId: directLease.seatId ?? "default",
-            skillId: directLease.skillId,
-            bundleId: directLease.bundleId,
-            leaseJti: directLease.jti,
-          });
-        } else {
-          const authError = await authenticateManagementRequest(request, {
-            managementApiKey,
-            managementAuthenticator,
-          });
-          if (authError) return authError;
-          validated = validateMeterUploadContract(body);
-        }
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
-      }
-
-      try {
-        const appendMeterEvents = getStoreMethod(leaseStore, "appendMeterEvents");
-        await appendMeterEvents(validated.events);
-        return json({
-          accepted: true,
-          mode,
-          ack: buildMeterUploadAck(validated.events),
-        });
-      } catch (error) {
-        // Storage failure — idempotent, safe to retry the full upload file
-        return json({ accepted: false, error: "meter_batch_failed", retryable: true }, 500);
-      }
-    }
-
-    if (request.method === "GET" && url.pathname === "/v1/usage/summary") {
-      try {
-        const getUsageSummary = getStoreMethod(leaseStore, "getUsageSummary");
-        const rows = await getUsageSummary({
-          providerId: url.searchParams.get("providerId") ?? undefined,
-          customerId: url.searchParams.get("customerId") ?? undefined,
-          workspaceId: url.searchParams.get("workspaceId") ?? undefined,
-          seatId: url.searchParams.get("seatId") ?? undefined,
-          skillId: url.searchParams.get("skillId") ?? undefined,
-          bundleId: url.searchParams.get("bundleId") ?? undefined,
-        });
-        const summary = rows.map(validateAcceptedUsageSummaryRow);
-        return json({ summary });
-      } catch (error) {
-        return json({ error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/v1/billing/pricing-rules") {
-      try {
-        const body = await readBody(request);
-        const pricingRule = validatePricingRuleContract(body.pricingRule ?? body);
-        const savePricingRule = getStoreMethod(leaseStore, "savePricingRule");
-        const saved = await savePricingRule(pricingRule);
-        return json({ accepted: true, pricingRule: saved });
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "GET" && url.pathname === "/v1/billing/pricing-rules") {
-      try {
-        const listPricingRules = getStoreMethod(leaseStore, "listPricingRules");
-        const pricingRules = await listPricingRules({
-          providerId: url.searchParams.get("providerId") ?? undefined,
-          customerId: url.searchParams.get("customerId") ?? undefined,
-          workspaceId: url.searchParams.get("workspaceId") ?? undefined,
-        });
-        return json({ pricingRules });
-      } catch (error) {
-        return json({ error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/v1/billing/invoices/draft") {
-      try {
-        const body = await readBody(request);
-        const draftRequest = validateInvoiceDraftRequestContract(body);
-        const getAcceptedUsageEvents = getStoreMethod(leaseStore, "getAcceptedUsageEvents");
-        const listPricingRules = getStoreMethod(leaseStore, "listPricingRules");
-        const saveInvoice = getStoreMethod(leaseStore, "saveInvoice");
-        const usageEvents = await getAcceptedUsageEvents(draftRequest);
-        const pricingRules = await listPricingRules(draftRequest);
-        const invoiceId = draftRequest.invoiceId ?? crypto.randomUUID();
-        const invoice = draftInvoiceFromUsage({
-          ...draftRequest,
-          invoiceId,
-          usageEvents,
-          pricingRules,
-        });
-        const saved = await saveInvoice(invoice);
-        return json({ accepted: true, invoice: saved });
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "GET" && url.pathname === "/v1/billing/invoices") {
-      try {
-        const listInvoices = getStoreMethod(leaseStore, "listInvoices");
-        const invoices = await listInvoices({
-          providerId: url.searchParams.get("providerId") ?? undefined,
-          customerId: url.searchParams.get("customerId") ?? undefined,
-        });
-        return json({ invoices });
-      } catch (error) {
-        return json({ error: error.message }, 400);
-      }
-    }
-
-    const paymentHandoffMatch =
-      /^\/v1\/billing\/invoices\/([^/]+)\/payment-handoff$/.exec(url.pathname);
-    if (request.method === "POST" && paymentHandoffMatch) {
-      try {
-        const invoiceId = decodeURIComponent(paymentHandoffMatch[1]);
-        const body = await readBody(request);
-        const handoffRequest = validatePaymentHandoffRequestContract(body);
-        const provider = paymentProviders.get(handoffRequest.provider);
-        if (!provider) throw new Error(`payment_provider_not_configured:${handoffRequest.provider}`);
-        const getInvoice = getStoreMethod(leaseStore, "getInvoice");
-        const savePaymentHandoff = getStoreMethod(leaseStore, "savePaymentHandoff");
-        const invoice = await getInvoice(invoiceId);
-        if (!invoice) throw new Error("invoice_not_found");
-        const paymentHandoff = await provider.createPaymentHandoff({
-          invoice,
-          request: handoffRequest,
-        });
-        const saved = await savePaymentHandoff(paymentHandoff);
-        return json({ accepted: true, paymentHandoff: saved });
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/v1/tsa/manual-attest") {
-      try {
-        const body = await readBody(request);
-        const customerId = getRequiredString(
-          body,
-          "customerId",
-          "manual_attestation_missing_customer_id"
-        );
-        const seatId = body.seatId ?? "default";
-        const record = attestationContract.createRecord(body);
-        const storedRecord = { ...record, customerId, seatId };
-        await leaseStore.addManualAttestation(storedRecord);
-        return json({ accepted: true, record: storedRecord });
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
-      }
-    }
-
-    if (request.method === "GET" && url.pathname === "/v1/tsa/manual-attestations") {
-      try {
-        const listManualAttestations = getStoreMethod(
-          leaseStore,
-          "listManualAttestations"
-        );
-        const customerId = url.searchParams.get("customerId") ?? undefined;
-        const seatId = url.searchParams.get("seatId") ?? undefined;
-        const records = await listManualAttestations({ customerId, seatId });
-        return json({ records });
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
-      }
-    }
-
-    if (
-      request.method === "GET" &&
-      url.pathname === "/v1/tsa/manual-attestations/latest"
-    ) {
-      try {
-        const customerId = url.searchParams.get("customerId");
-        if (!customerId) {
-          throw new Error("manual_attestation_missing_customer_id");
-        }
-        const seatId = url.searchParams.get("seatId") ?? "default";
-        const ticketId = url.searchParams.get("ticketId") ?? undefined;
-        const record = await leaseStore.getLatestManualAttestation(customerId, seatId, {
-          ticketId,
-        });
-        return json({ accepted: true, record });
-      } catch (error) {
-        return json({ accepted: false, error: error.message }, 400);
-      }
-    }
-
-    return json({ error: "not_found" }, 404);
   };
 }
 

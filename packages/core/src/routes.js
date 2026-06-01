@@ -45,7 +45,7 @@ function placeholder(name) {
 }
 
 export const routes = [
-  { method: "GET",  path: "/healthz",                                       handler: placeholder("healthz") },
+  { method: "GET",  path: "/healthz",                                       handler: async () => ({ status: 200, body: { ok: true, service: "license-server" } }) },
   { method: "POST", path: "/v1/providers",                                  management: true, handler: placeholder("providers.create") },
   { method: "GET",  path: "/v1/providers",                                  management: true, handler: placeholder("providers.list") },
   { method: "POST", path: "/v1/providers/:providerId/customers",             management: true, handler: placeholder("customers.create") },
