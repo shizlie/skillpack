@@ -35,3 +35,36 @@ export function matchRoute(pattern, path) {
   if (params === null) return { matches: false, params: null };
   return { matches: true, params };
 }
+
+// Body of each handler is filled in by Task 3. For now, placeholders that
+// throw so the dispatcher wiring can be tested in isolation.
+function placeholder(name) {
+  return async () => {
+    throw new Error(`route_not_implemented:${name}`);
+  };
+}
+
+export const routes = [
+  { method: "GET",  path: "/healthz",                                       handler: placeholder("healthz") },
+  { method: "POST", path: "/v1/providers",                                  management: true, handler: placeholder("providers.create") },
+  { method: "GET",  path: "/v1/providers",                                  management: true, handler: placeholder("providers.list") },
+  { method: "POST", path: "/v1/providers/:providerId/customers",             management: true, handler: placeholder("customers.create") },
+  { method: "GET",  path: "/v1/providers/:providerId/customers",             management: true, handler: placeholder("customers.list") },
+  { method: "POST", path: "/v1/workspaces",                                 management: true, handler: placeholder("workspaces.create") },
+  { method: "GET",  path: "/v1/workspaces",                                 management: true, handler: placeholder("workspaces.list") },
+  { method: "POST", path: "/v1/leases/issue",                               management: true, handler: placeholder("leases.issue") },
+  { method: "POST", path: "/v1/leases/verify",                              management: true, handler: placeholder("leases.verify") },
+  { method: "POST", path: "/v1/policies/issue",                             management: true, handler: placeholder("policies.issue") },
+  { method: "POST", path: "/v1/policies/sync",                              management: true, handler: placeholder("policies.sync") },
+  { method: "GET",  path: "/v1/usage/summary",                              management: true, handler: placeholder("usage.summary") },
+  { method: "POST", path: "/v1/billing/pricing-rules",                      management: true, handler: placeholder("billing.pricing-rules.create") },
+  { method: "GET",  path: "/v1/billing/pricing-rules",                      management: true, handler: placeholder("billing.pricing-rules.list") },
+  { method: "POST", path: "/v1/billing/invoices/draft",                     management: true, handler: placeholder("billing.invoices.draft") },
+  { method: "GET",  path: "/v1/billing/invoices",                           management: true, handler: placeholder("billing.invoices.list") },
+  { method: "GET",  path: "/v1/billing/invoices/:id",                       management: true, handler: placeholder("billing.invoices.get") },
+  { method: "POST", path: "/v1/billing/invoices/:id/payment-handoff",       management: true, handler: placeholder("billing.invoices.payment-handoff") },
+  { method: "POST", path: "/v1/meter/upload",                               management: true, handler: placeholder("meter.upload") },
+  { method: "POST", path: "/v1/tsa/manual-attest",                          management: true, handler: placeholder("tsa.manual-attest") },
+  { method: "GET",  path: "/v1/tsa/manual-attestations",                    management: true, handler: placeholder("tsa.manual-attestations.list") },
+  { method: "GET",  path: "/v1/tsa/manual-attestations/latest",             management: true, handler: placeholder("tsa.manual-attestations.latest") },
+];
