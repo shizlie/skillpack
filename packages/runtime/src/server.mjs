@@ -48,6 +48,7 @@ import {
   evaluateUsageState,
   evaluateTimeState,
   evaluatePolicyDecision,
+  evaluatePolicyToolCallDecision,
 } from "@skillpack/protocol";
 export {
   validatePolicySnapshot,
@@ -55,64 +56,8 @@ export {
   evaluateUsageState,
   evaluateTimeState,
   evaluatePolicyDecision,
+  evaluatePolicyToolCallDecision,
 };
-
-export function evaluatePolicyToolCallDecision({
-  policy,
-  seatId = "default",
-  toolName,
-  currentCount = 0,
-  nowSec = Math.floor(Date.now() / 1000),
-}) {
-  if (!policy) {
-    return {
-      decision: "ALLOW",
-      reasonCodes: [],
-      usageState: "NORMAL",
-      nextCount: currentCount + 1,
-      budget: undefined,
-    };
-  }
-  if (typeof toolName !== "string" || toolName.length === 0) {
-    throw new Error("policy_tool_invalid_name");
-  }
-  if (!Number.isInteger(currentCount) || currentCount < 0) {
-    throw new Error("policy_usage_invalid_actual");
-  }
-  const seatMode = policy.seatPolicy.seats?.[seatId]?.mode ?? policy.seatPolicy.defaultMode;
-  const effectiveWindow = evaluateEffectiveTimeWindow(
-    policy.timePolicy.workspace,
-    policy.timePolicy.seatOverrides?.[seatId]
-  );
-  const timeState = evaluateTimeState({
-    nowSec,
-    startsAtSec: effectiveWindow.startsAtSec,
-    expiresAtSec: effectiveWindow.expiresAtSec,
-    graceUntilSec: effectiveWindow.graceUntilSec,
-  });
-  const nextCount = currentCount + 1;
-  const budget = policy.usagePolicy.toolBudgets[toolName];
-  let usageState = "NORMAL";
-  if (Number.isFinite(budget) && budget > 0) {
-    usageState = evaluateUsageState({
-      actual: nextCount,
-      budget,
-      warningPct: policy.usagePolicy.thresholds.warningPct,
-      hardStopPct: policy.usagePolicy.thresholds.hardStopPct,
-    });
-  }
-  return {
-    ...evaluatePolicyDecision({
-      workspaceMode: policy.workspacePolicy.mode,
-      seatMode,
-      timeState,
-      usageState,
-    }),
-    usageState,
-    nextCount,
-    budget,
-  };
-}
 
 // ── lease verification (inlined from @skillpack/runtime + @skillpack/crypto) ─
 
