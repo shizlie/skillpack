@@ -42,6 +42,7 @@ import {
   createNoopUploadTransport,
 } from "./direct-upload-transport.mjs";
 export { readWikiEngineConfig } from "./wiki-rag-shared.mjs";
+export { validatePolicySnapshot } from "@skillpack/protocol";
 
 // ── lease verification (inlined from @skillpack/runtime + @skillpack/crypto) ─
 
@@ -123,106 +124,6 @@ function validatePolicyTimeWindow(window, prefix) {
     throw new Error(`${prefix}_grace_before_expiry`);
   }
   return window;
-}
-
-export function validatePolicySnapshot(policy) {
-  if (!isPlainObject(policy)) throw new Error("policy_snapshot_invalid_object");
-  for (const key of [
-    "policyVersion",
-    "policyId",
-    "workspaceId",
-    "workspacePolicy",
-    "seatPolicy",
-    "usagePolicy",
-    "timePolicy",
-  ]) {
-    if (policy[key] === undefined || policy[key] === null) {
-      throw new Error(`policy_snapshot_missing_${key}`);
-    }
-  }
-  if (!Number.isInteger(policy.policyVersion) || policy.policyVersion <= 0) {
-    throw new Error("policy_snapshot_invalid_version");
-  }
-  if (typeof policy.policyId !== "string" || policy.policyId.length === 0) {
-    throw new Error("policy_snapshot_invalid_policy_id");
-  }
-  if (typeof policy.workspaceId !== "string" || policy.workspaceId.length === 0) {
-    throw new Error("policy_snapshot_invalid_workspace_id");
-  }
-  if (!isPlainObject(policy.workspacePolicy)) {
-    throw new Error("policy_snapshot_invalid_workspace_policy");
-  }
-  validatePolicyMode(
-    policy.workspacePolicy.mode,
-    "policy_snapshot_invalid_workspace_mode"
-  );
-  if (!isPlainObject(policy.seatPolicy)) {
-    throw new Error("policy_snapshot_invalid_seat_policy");
-  }
-  validatePolicyMode(
-    policy.seatPolicy.defaultMode,
-    "policy_snapshot_invalid_seat_default_mode"
-  );
-  if (
-    policy.seatPolicy.seats !== undefined &&
-    !isPlainObject(policy.seatPolicy.seats)
-  ) {
-    throw new Error("policy_snapshot_invalid_seat_overrides");
-  }
-  if (isPlainObject(policy.seatPolicy.seats)) {
-    for (const seat of Object.values(policy.seatPolicy.seats)) {
-      if (!isPlainObject(seat)) {
-        throw new Error("policy_snapshot_invalid_seat_override");
-      }
-      validatePolicyMode(seat.mode, "policy_snapshot_invalid_seat_mode");
-    }
-  }
-
-  if (!isPlainObject(policy.usagePolicy)) {
-    throw new Error("policy_snapshot_invalid_usage_policy");
-  }
-  if (policy.usagePolicy.unit !== "tool_call") {
-    throw new Error("policy_snapshot_invalid_usage_unit");
-  }
-  if (!isPlainObject(policy.usagePolicy.thresholds)) {
-    throw new Error("policy_snapshot_invalid_usage_thresholds");
-  }
-  const warningPct = policy.usagePolicy.thresholds.warningPct;
-  const hardStopPct = policy.usagePolicy.thresholds.hardStopPct;
-  if (!Number.isFinite(warningPct) || warningPct < 0) {
-    throw new Error("policy_snapshot_invalid_warning_pct");
-  }
-  if (!Number.isFinite(hardStopPct) || hardStopPct < 0) {
-    throw new Error("policy_snapshot_invalid_hard_stop_pct");
-  }
-  if (hardStopPct < warningPct) {
-    throw new Error("policy_snapshot_invalid_threshold_order");
-  }
-  if (!isPlainObject(policy.usagePolicy.toolBudgets)) {
-    throw new Error("policy_snapshot_invalid_tool_budgets");
-  }
-  for (const budget of Object.values(policy.usagePolicy.toolBudgets)) {
-    if (!Number.isFinite(budget) || budget <= 0) {
-      throw new Error("policy_snapshot_invalid_tool_budget");
-    }
-  }
-
-  if (!isPlainObject(policy.timePolicy)) {
-    throw new Error("policy_snapshot_invalid_time_policy");
-  }
-  validatePolicyTimeWindow(policy.timePolicy.workspace, "policy_snapshot_workspace");
-  if (
-    policy.timePolicy.seatOverrides !== undefined &&
-    !isPlainObject(policy.timePolicy.seatOverrides)
-  ) {
-    throw new Error("policy_snapshot_invalid_time_seat_overrides");
-  }
-  if (isPlainObject(policy.timePolicy.seatOverrides)) {
-    for (const override of Object.values(policy.timePolicy.seatOverrides)) {
-      validatePolicyTimeWindow(override, "policy_snapshot_seat_window");
-    }
-  }
-  return policy;
 }
 
 export function evaluateEffectiveTimeWindow(workspaceWindow, seatWindow) {
