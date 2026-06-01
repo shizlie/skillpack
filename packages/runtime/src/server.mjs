@@ -15,11 +15,9 @@ import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
+import { toBase64Url, fromBase64Url, canonicalJson } from "@skillpack/crypto";
 import {
-  toBase64Url,
-  fromBase64Url,
   sha256Hex,
-  canonicalJson,
   isUnsafeArchivePath,
   ensureSafePathWithin,
 } from "./server-util.mjs";
