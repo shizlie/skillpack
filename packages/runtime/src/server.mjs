@@ -42,7 +42,8 @@ import {
   createNoopUploadTransport,
 } from "./direct-upload-transport.mjs";
 export { readWikiEngineConfig } from "./wiki-rag-shared.mjs";
-export { validatePolicySnapshot } from "@skillpack/protocol";
+import { validatePolicySnapshot } from "@skillpack/protocol";
+export { validatePolicySnapshot };
 
 // ── lease verification (inlined from @skillpack/runtime + @skillpack/crypto) ─
 
@@ -101,11 +102,6 @@ function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function validatePolicyMode(mode, errorCode) {
-  if (mode !== "ENABLED" && mode !== "DISABLED") {
-    throw new Error(errorCode);
-  }
-}
 
 function validatePolicyTimeWindow(window, prefix) {
   if (!isPlainObject(window)) {
