@@ -5,6 +5,7 @@ import {
   evaluatePolicyDecision,
   evaluateTimeState,
   evaluateUsageState,
+  evaluatePolicyToolCallDecision,
   validatePolicySnapshot,
 } from "../src/index.js";
 
@@ -169,4 +170,106 @@ test("evaluateUsageState: threshold boundaries (100% = WARNING, exactly 120% = W
   expect(evaluateUsageState({ actual: 13, budget: 10, warningPct: 100, hardStopPct: 120 })).toBe("HARD_STOP");
   // Below 100%: NORMAL
   expect(evaluateUsageState({ actual: 9, budget: 10, warningPct: 100, hardStopPct: 120 })).toBe("NORMAL");
+});
+
+// ── evaluatePolicyToolCallDecision ─────────────────────────────────────────
+
+function makeBasePolicy(nowSec, overrides = {}) {
+  const base = {
+    policyVersion: 1,
+    policyId: "pol_1",
+    workspaceId: "ws_1",
+    workspacePolicy: { mode: "ENABLED" },
+    seatPolicy: { defaultMode: "ENABLED", seats: {} },
+    usagePolicy: {
+      unit: "tool_call",
+      thresholds: { warningPct: 100, hardStopPct: 120 },
+      toolBudgets: { wiki_search: 100, wiki_read_page: 100 },
+    },
+    timePolicy: {
+      workspace: {
+        startsAtSec: nowSec - 600,
+        expiresAtSec: nowSec + 3600,
+        graceUntilSec: nowSec + 7200,
+      },
+      seatOverrides: {},
+    },
+  };
+  return validatePolicySnapshot({
+    ...base,
+    ...overrides,
+    workspacePolicy: { ...base.workspacePolicy, ...(overrides.workspacePolicy ?? {}) },
+    seatPolicy: {
+      ...base.seatPolicy,
+      ...(overrides.seatPolicy ?? {}),
+      seats: { ...base.seatPolicy.seats, ...(overrides.seatPolicy?.seats ?? {}) },
+    },
+    usagePolicy: {
+      ...base.usagePolicy,
+      ...(overrides.usagePolicy ?? {}),
+      thresholds: { ...base.usagePolicy.thresholds, ...(overrides.usagePolicy?.thresholds ?? {}) },
+      toolBudgets: { ...base.usagePolicy.toolBudgets, ...(overrides.usagePolicy?.toolBudgets ?? {}) },
+    },
+    timePolicy: {
+      ...base.timePolicy,
+      ...(overrides.timePolicy ?? {}),
+      workspace: { ...base.timePolicy.workspace, ...(overrides.timePolicy?.workspace ?? {}) },
+      seatOverrides: { ...base.timePolicy.seatOverrides, ...(overrides.timePolicy?.seatOverrides ?? {}) },
+    },
+  });
+}
+
+test("evaluatePolicyToolCallDecision: ALLOW within budget and active window", () => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const policy = makeBasePolicy(nowSec);
+
+  const out = evaluatePolicyToolCallDecision({
+    policy,
+    seatId: "default",
+    toolName: "wiki_search",
+    currentCount: 0,
+    nowSec,
+  });
+
+  expect(out.decision).toBe("ALLOW");
+  expect(out.reasonCodes).toEqual([]);
+  expect(out.usageState).toBe("NORMAL");
+  expect(out.nextCount).toBe(1);
+  expect(out.budget).toBe(100);
+});
+
+test("evaluatePolicyToolCallDecision: DENY when workspace is DISABLED", () => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const policy = makeBasePolicy(nowSec, { workspacePolicy: { mode: "DISABLED" } });
+
+  const out = evaluatePolicyToolCallDecision({
+    policy,
+    seatId: "default",
+    toolName: "wiki_search",
+    currentCount: 0,
+    nowSec,
+  });
+
+  expect(out.decision).toBe("DENY");
+  expect(out.reasonCodes).toEqual(["workspace_disabled"]);
+});
+
+test("evaluatePolicyToolCallDecision: ALLOW_WITH_WARNING at budget threshold", () => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  // budget=1, currentCount=0 → nextCount=1 → 100% of budget → WARNING
+  const policy = makeBasePolicy(nowSec, {
+    usagePolicy: { toolBudgets: { wiki_search: 1, wiki_read_page: 1 } },
+  });
+
+  const out = evaluatePolicyToolCallDecision({
+    policy,
+    seatId: "default",
+    toolName: "wiki_search",
+    currentCount: 0,
+    nowSec,
+  });
+
+  expect(out.decision).toBe("ALLOW_WITH_WARNING");
+  expect(out.usageState).toBe("WARNING");
+  expect(out.reasonCodes).toContain("usage_warning");
 });
