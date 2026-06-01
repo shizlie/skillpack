@@ -191,14 +191,6 @@ function findRoute(method, pathname) {
   return null;
 }
 
-function isManagementMatched(method, pathname) {
-  for (const route of routes) {
-    if (!route.management) continue;
-    if (route.method !== method) continue;
-    if (matchRoute(route.path, pathname).matches) return true;
-  }
-  return false;
-}
 
 export function createLicenseFetchHandler({
   signingPrivateKeyPem,
@@ -218,7 +210,10 @@ export function createLicenseFetchHandler({
     const url = new URL(request.url);
     const nowSec = Math.floor(Date.now() / 1000);
 
-    if (isManagementMatched(request.method, url.pathname)) {
+    const found = findRoute(request.method, url.pathname);
+    if (!found) return errorResponse(404, "not_found");
+
+    if (found.route.management) {
       const authError = await authenticateManagementRequest(request, {
         managementApiKey,
         managementAuthenticator,
@@ -226,10 +221,21 @@ export function createLicenseFetchHandler({
       if (authError) return authError;
     }
 
-    const found = findRoute(request.method, url.pathname);
-    if (!found) return errorResponse(404, "not_found");
-
     const { route, params } = found;
+    /**
+     * @typedef {Object} RouteCtx
+     * Context object passed to every route handler.
+     *
+     * @property {any} store — Lease store; see packages/core/src/storage.js
+     * @property {any} providers — Payment provider registry; see packages/core/src/payment-providers.js
+     * @property {any} tsaMonitor — TSA token monitor
+     * @property {any} attestationContract — Manual time attestation contract
+     * @property {Request} request — The original incoming Request
+     * @property {URL} url — Parsed URL of the request
+     * @property {number} nowSec — floor(Date.now()/1000) at request start
+     * @property {Record<string,string>} params — Path parameters extracted by the matcher (e.g. { id: 'inv_123' })
+     * @property {object|null} body — Parsed JSON body. null for GET/HEAD; an object otherwise. 400 is returned before this is set if JSON parsing fails.
+     */
     const ctx = {
       store: leaseStore,
       providers: paymentProviders,
@@ -251,6 +257,9 @@ export function createLicenseFetchHandler({
 
     try {
       const result = await route.handler(ctx);
+      if (result === null || result === undefined) {
+        return errorResponse(500, "internal_error");
+      }
       if (result instanceof Response) return result;
       return jsonResponse(result);
     } catch (error) {
