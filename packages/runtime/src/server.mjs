@@ -49,6 +49,7 @@ import {
   evaluateTimeState,
   evaluatePolicyDecision,
   evaluatePolicyToolCallDecision,
+  validateLeasePayload,
 } from "@skillpack/protocol";
 export {
   validatePolicySnapshot,
@@ -57,6 +58,7 @@ export {
   evaluateTimeState,
   evaluatePolicyDecision,
   evaluatePolicyToolCallDecision,
+  validateLeasePayload,
 };
 
 // ── lease verification (inlined from @skillpack/runtime + @skillpack/crypto) ─
@@ -65,22 +67,6 @@ const DEFAULT_GRACE_SEC = 72 * 60 * 60;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-function validateLeasePayload(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("lease_payload_invalid_object");
-  }
-  for (const key of ["iss", "sub", "iat", "exp", "jti", "leaseCounter"]) {
-    if (payload[key] === undefined || payload[key] === null) {
-      throw new Error("lease_payload_missing_" + key);
-    }
-  }
-  if (typeof payload.iss !== "string" || payload.iss.length === 0) throw new Error("lease_payload_invalid_iss");
-  if (typeof payload.sub !== "string" || payload.sub.length === 0) throw new Error("lease_payload_invalid_sub");
-  if (typeof payload.jti !== "string" || payload.jti.length === 0) throw new Error("lease_payload_invalid_jti");
-  if (!Number.isInteger(payload.iat) || !Number.isInteger(payload.exp)) throw new Error("lease_payload_invalid_time");
-  if (payload.exp <= payload.iat) throw new Error("lease_payload_exp_before_iat");
-  if (!Number.isInteger(payload.leaseCounter) || payload.leaseCounter < 0) throw new Error("lease_payload_invalid_counter");
-}
 
 function verifyDetached(message, signatureB64Url, publicKeyPem) {
   const msg = Buffer.isBuffer(message) ? message : Buffer.from(message);
