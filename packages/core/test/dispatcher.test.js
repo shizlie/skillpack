@@ -36,10 +36,11 @@ describe("dispatcher routes through the table", () => {
       headers: { "content-type": "application/json", "x-api-key": "test-key" },
       body: JSON.stringify({ providerId: "p1", name: "Acme" }),
     });
-    // Placeholder handlers throw, so the dispatcher must return 500 with that error.
-    // Once Task 4 lands, this should be 201 with a created provider.
+    // Handler is now ported — real provider is created.
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.error).toContain("providers.create");
+    expect(body.accepted).toBe(true);
+    expect(body.provider).toBeDefined();
   });
 
   test("unknown route returns 404", async () => {
@@ -54,9 +55,10 @@ describe("dispatcher routes through the table", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ leaseToken: "fake" }),
     });
-    // Placeholder throws, but auth must NOT have rejected the request first.
+    // Handler ran (not rejected by management auth); fake token → 400 with valid:false.
+    expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toContain("leases.verify");
+    expect(body.valid).toBe(false);
   });
 
   test("POST /v1/meter/upload is open at dispatcher (handler does its own auth)", async () => {
@@ -66,7 +68,7 @@ describe("dispatcher routes through the table", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ workspaceId: "w1", events: [] }),
     });
-    const body = await res.json();
-    expect(body.error).toContain("meter.upload");
+    // No lease token + no x-api-key → handler returns 401 from its own auth check.
+    expect(res.status).toBe(401);
   });
 });

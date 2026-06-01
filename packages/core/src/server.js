@@ -1,32 +1,9 @@
 import crypto from "node:crypto";
 
-import {
-  assertMonotonicLeaseCounter,
-  createLeaseToken,
-  verifyLeaseToken,
-} from "@skillpack/crypto";
-import {
-  validateAcceptedUsageSummaryRow,
-  validateCustomerCreateContract,
-  validateDirectLeaseCommercialContext,
-  validateDirectMeterUploadContract,
-  validateLeasePayload,
-  validateMeterUploadContract,
-  validateInvoiceDraftRequestContract,
-  validatePaymentHandoffRequestContract,
-  validatePricingRuleContract,
-  validatePolicySnapshot,
-  validateProviderCreateContract,
-  validateWorkspaceCreateContract,
-} from "@skillpack/protocol";
 import { createManualTimeAttestationContract, createTsaMonitor } from "@skillpack/tsa";
-import { draftInvoiceFromUsage } from "./billing.js";
 import { createPaymentProviderRegistry } from "./payment-providers.js";
 import { createInMemoryLeaseStore } from "./storage.js";
 import { matchRoute, routes } from "./routes.js";
-
-const DEFAULT_TTL_SEC = 30 * 24 * 60 * 60;
-const DEFAULT_MANUAL_ATTESTATION_MAX_AGE_SEC = 4 * 60 * 60;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -41,22 +18,6 @@ async function readBody(request) {
   } catch {
     throw new Error("invalid_json_body");
   }
-}
-
-function getRequiredString(body, key, errorCode) {
-  const value = body[key];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(errorCode);
-  }
-  return value;
-}
-
-function getStoreMethod(leaseStore, methodName) {
-  const method = leaseStore?.[methodName];
-  if (typeof method !== "function") {
-    throw new Error(`lease_store_missing_${methodName}`);
-  }
-  return method.bind(leaseStore);
 }
 
 function readApiKey(request) {
@@ -98,79 +59,6 @@ async function authenticateManagementRequest(
   return null;
 }
 
-function authenticateDirectMeterUpload(request, signingPublicKeyPem, nowSec) {
-  const leaseToken = request.headers.get("x-skillpack-lease-token");
-  if (typeof leaseToken !== "string" || leaseToken.length === 0) {
-    return null;
-  }
-  return verifyLeaseToken(leaseToken, signingPublicKeyPem, { nowSec });
-}
-
-function buildMeterUploadAck(events) {
-  let seqStart = null;
-  let seqEnd = null;
-  for (const event of events) {
-    if (!Number.isInteger(event.eventSeq)) continue;
-    if (seqStart === null || event.eventSeq < seqStart) seqStart = event.eventSeq;
-    if (seqEnd === null || event.eventSeq > seqEnd) seqEnd = event.eventSeq;
-  }
-  return {
-    count: events.length,
-    range: seqStart === null ? null : { seqStart, seqEnd },
-  };
-}
-
-function getProviderIdForCustomerRoute(pathname) {
-  const match = /^\/v1\/providers\/([^/]+)\/customers$/.exec(pathname);
-  if (!match) return null;
-  try {
-    return decodeURIComponent(match[1]);
-  } catch {
-    return match[1];
-  }
-}
-
-function isManagementRoute(request, pathname) {
-  if (request.method === "GET" && pathname === "/v1/providers") return true;
-  if (request.method === "POST" && pathname === "/v1/providers") return true;
-  if (request.method === "GET" && pathname === "/v1/workspaces") return true;
-  if (request.method === "POST" && pathname === "/v1/workspaces") return true;
-  if (
-    (request.method === "GET" || request.method === "POST") &&
-    getProviderIdForCustomerRoute(pathname)
-  ) {
-    return true;
-  }
-  if (request.method === "POST" && pathname === "/v1/leases/issue") return true;
-  if (request.method === "POST" && pathname === "/v1/policies/issue") return true;
-  if (request.method === "POST" && pathname === "/v1/policies/sync") return true;
-  if (request.method === "GET" && pathname === "/v1/usage/summary") return true;
-  if (request.method === "POST" && pathname === "/v1/billing/pricing-rules") return true;
-  if (request.method === "GET" && pathname === "/v1/billing/pricing-rules") return true;
-  if (request.method === "POST" && pathname === "/v1/billing/invoices/draft") return true;
-  if (request.method === "GET" && pathname === "/v1/billing/invoices") return true;
-  if (
-    request.method === "POST" &&
-    /^\/v1\/billing\/invoices\/[^/]+\/payment-handoff$/.test(pathname)
-  ) {
-    return true;
-  }
-  if (request.method === "POST" && pathname === "/v1/tsa/manual-attest") return true;
-  if (request.method === "GET" && pathname === "/v1/tsa/manual-attestations") return true;
-  if (request.method === "GET" && pathname === "/v1/tsa/manual-attestations/latest") return true;
-  return false;
-}
-
-function hasDirectLeaseCommercialField(body, key) {
-  return body[key] !== undefined && body[key] !== null;
-}
-
-function parsePositiveInteger(value, errorCode) {
-  if (value === undefined || value === null) return undefined;
-  if (!Number.isInteger(value) || value <= 0) throw new Error(errorCode);
-  return value;
-}
-
 function jsonResponse({ status = 200, body } = {}) {
   return new Response(JSON.stringify(body), {
     status,
@@ -190,7 +78,6 @@ function findRoute(method, pathname) {
   }
   return null;
 }
-
 
 export function createLicenseFetchHandler({
   signingPrivateKeyPem,
@@ -230,17 +117,25 @@ export function createLicenseFetchHandler({
      * @property {any} providers — Payment provider registry; see packages/core/src/payment-providers.js
      * @property {any} tsaMonitor — TSA token monitor
      * @property {any} attestationContract — Manual time attestation contract
+     * @property {string} signingPrivateKeyPem — PEM-encoded Ed25519 private signing key
+     * @property {string} signingPublicKeyPem — PEM-encoded Ed25519 public signing key
+     * @property {string|null} managementApiKey — Management API key (for meter.upload dual-auth)
+     * @property {Function|null} managementAuthenticator — Custom management authenticator
      * @property {Request} request — The original incoming Request
      * @property {URL} url — Parsed URL of the request
      * @property {number} nowSec — floor(Date.now()/1000) at request start
      * @property {Record<string,string>} params — Path parameters extracted by the matcher (e.g. { id: 'inv_123' })
-     * @property {object|null} body — Parsed JSON body. null for GET/HEAD; an object otherwise. 400 is returned before this is set if JSON parsing fails.
+     * @property {object|null} body — Parsed JSON body. null for GET/HEAD; an object otherwise.
      */
     const ctx = {
       store: leaseStore,
       providers: paymentProviders,
       tsaMonitor,
       attestationContract,
+      signingPrivateKeyPem,
+      signingPublicKeyPem,
+      managementApiKey,
+      managementAuthenticator,
       request,
       url,
       nowSec,
