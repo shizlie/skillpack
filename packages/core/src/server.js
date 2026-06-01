@@ -1,16 +1,10 @@
-import crypto from "node:crypto";
+import { verifyManagementKey } from "./auth.js";
 
 import { createManualTimeAttestationContract, createTsaMonitor } from "@skillpack/tsa";
 import { createPaymentProviderRegistry } from "./payment-providers.js";
 import { createInMemoryLeaseStore } from "./storage.js";
 import { matchRoute, routes } from "./routes.js";
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
 
 async function readBody(request) {
   try {
@@ -20,43 +14,9 @@ async function readBody(request) {
   }
 }
 
-function readApiKey(request) {
-  return request.headers.get("x-api-key") ?? request.headers.get("X-Api-Key");
-}
-
-function isValidManagementKey(request, managementApiKey) {
-  const providedApiKey = readApiKey(request);
-  if (
-    typeof providedApiKey !== "string" ||
-    typeof managementApiKey !== "string" ||
-    providedApiKey.length !== managementApiKey.length
-  ) {
-    return false;
-  }
-  const hashKey = (key) => crypto.createHash("sha256").update(key).digest();
-  return crypto.timingSafeEqual(hashKey(providedApiKey), hashKey(managementApiKey));
-}
-
-async function authenticateManagementRequest(
-  request,
-  { managementApiKey, managementAuthenticator }
-) {
-  if (typeof managementAuthenticator === "function") {
-    try {
-      return (await managementAuthenticator(request)) === true
-        ? null
-        : json({ error: "unauthorized" }, 401);
-    } catch {
-      return json({ error: "unauthorized" }, 401);
-    }
-  }
-  if (!managementApiKey) {
-    return json({ error: "management_api_key_not_configured" }, 503);
-  }
-  if (!isValidManagementKey(request, managementApiKey)) {
-    return json({ error: "unauthorized" }, 401);
-  }
-  return null;
+async function authenticateManagementRequest(request, opts) {
+  const result = await verifyManagementKey(request, opts);
+  return result === null ? null : jsonResponse(result);
 }
 
 function jsonResponse({ status = 200, body } = {}) {
@@ -117,10 +77,10 @@ export function createLicenseFetchHandler({
      * @property {any} providers — Payment provider registry; see packages/core/src/payment-providers.js
      * @property {any} tsaMonitor — TSA token monitor
      * @property {any} attestationContract — Manual time attestation contract
-     * @property {string} signingPrivateKeyPem — PEM-encoded Ed25519 private signing key
-     * @property {string} signingPublicKeyPem — PEM-encoded Ed25519 public signing key
-     * @property {string|null} managementApiKey — Management API key (for meter.upload dual-auth)
-     * @property {Function|null} managementAuthenticator — Custom management authenticator
+     * @property {string} signingPrivateKeyPem — PEM-encoded Ed25519 private signing key (only consumed by issueLease and verifyLease; all other handlers should ignore it)
+     * @property {string} signingPublicKeyPem — PEM-encoded Ed25519 public signing key (only consumed by issueLease, verifyLease, and uploadMeter's direct-lease fallback)
+     * @property {string|null} managementApiKey — Management API key (only consumed by uploadMeter's dual-auth fallback; management routes are authenticated before ctx is built)
+     * @property {Function|null} managementAuthenticator — Custom management authenticator (only consumed by uploadMeter's dual-auth fallback)
      * @property {Request} request — The original incoming Request
      * @property {URL} url — Parsed URL of the request
      * @property {number} nowSec — floor(Date.now()/1000) at request start
