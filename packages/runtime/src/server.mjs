@@ -61,40 +61,10 @@ export {
   validateLeasePayload,
 };
 
-// ── lease verification (inlined from @skillpack/runtime + @skillpack/crypto) ─
+import { verifyLeaseForRuntime } from "./index.js";
 
-const DEFAULT_GRACE_SEC = 72 * 60 * 60;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-
-function verifyDetached(message, signatureB64Url, publicKeyPem) {
-  const msg = Buffer.isBuffer(message) ? message : Buffer.from(message);
-  return crypto.verify(null, msg, publicKeyPem, fromBase64Url(signatureB64Url));
-}
-
-function verifyLeaseForRuntime({ leaseToken, publicKeyPem, nowSec = Math.floor(Date.now() / 1000), graceSec = DEFAULT_GRACE_SEC }) {
-  const parts = leaseToken.split(".");
-  if (parts.length !== 3) throw new Error("runtime_lease_invalid_format");
-  const [headerPart, payloadPart, signaturePart] = parts;
-  let header, payload;
-  try {
-    header = JSON.parse(fromBase64Url(headerPart).toString("utf8"));
-    payload = JSON.parse(fromBase64Url(payloadPart).toString("utf8"));
-  } catch {
-    throw new Error("runtime_lease_invalid_json");
-  }
-  if (header.alg !== "EdDSA" || header.typ !== "SPK_LEASE" || header.v !== 1) {
-    throw new Error("runtime_lease_invalid_header");
-  }
-  validateLeasePayload(payload);
-  if (!verifyDetached(`${headerPart}.${payloadPart}`, signaturePart, publicKeyPem)) {
-    throw new Error("runtime_lease_invalid_signature");
-  }
-  if (nowSec <= payload.exp) return { mode: "active", payload };
-  if (nowSec <= payload.exp + graceSec) return { mode: "grace", payload };
-  throw new Error("runtime_lease_expired_past_grace");
-}
 
 // ── wiki (inlined from @skillpack/wiki-mcp) ───────────────────────────────────
 
