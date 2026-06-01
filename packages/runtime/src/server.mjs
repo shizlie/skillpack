@@ -42,8 +42,77 @@ import {
   createNoopUploadTransport,
 } from "./direct-upload-transport.mjs";
 export { readWikiEngineConfig } from "./wiki-rag-shared.mjs";
-import { validatePolicySnapshot } from "@skillpack/protocol";
-export { validatePolicySnapshot };
+import {
+  validatePolicySnapshot,
+  evaluateEffectiveTimeWindow,
+  evaluateUsageState,
+  evaluateTimeState,
+  evaluatePolicyDecision,
+} from "@skillpack/protocol";
+export {
+  validatePolicySnapshot,
+  evaluateEffectiveTimeWindow,
+  evaluateUsageState,
+  evaluateTimeState,
+  evaluatePolicyDecision,
+};
+
+export function evaluatePolicyToolCallDecision({
+  policy,
+  seatId = "default",
+  toolName,
+  currentCount = 0,
+  nowSec = Math.floor(Date.now() / 1000),
+}) {
+  if (!policy) {
+    return {
+      decision: "ALLOW",
+      reasonCodes: [],
+      usageState: "NORMAL",
+      nextCount: currentCount + 1,
+      budget: undefined,
+    };
+  }
+  if (typeof toolName !== "string" || toolName.length === 0) {
+    throw new Error("policy_tool_invalid_name");
+  }
+  if (!Number.isInteger(currentCount) || currentCount < 0) {
+    throw new Error("policy_usage_invalid_actual");
+  }
+  const seatMode = policy.seatPolicy.seats?.[seatId]?.mode ?? policy.seatPolicy.defaultMode;
+  const effectiveWindow = evaluateEffectiveTimeWindow(
+    policy.timePolicy.workspace,
+    policy.timePolicy.seatOverrides?.[seatId]
+  );
+  const timeState = evaluateTimeState({
+    nowSec,
+    startsAtSec: effectiveWindow.startsAtSec,
+    expiresAtSec: effectiveWindow.expiresAtSec,
+    graceUntilSec: effectiveWindow.graceUntilSec,
+  });
+  const nextCount = currentCount + 1;
+  const budget = policy.usagePolicy.toolBudgets[toolName];
+  let usageState = "NORMAL";
+  if (Number.isFinite(budget) && budget > 0) {
+    usageState = evaluateUsageState({
+      actual: nextCount,
+      budget,
+      warningPct: policy.usagePolicy.thresholds.warningPct,
+      hardStopPct: policy.usagePolicy.thresholds.hardStopPct,
+    });
+  }
+  return {
+    ...evaluatePolicyDecision({
+      workspaceMode: policy.workspacePolicy.mode,
+      seatMode,
+      timeState,
+      usageState,
+    }),
+    usageState,
+    nextCount,
+    budget,
+  };
+}
 
 // ── lease verification (inlined from @skillpack/runtime + @skillpack/crypto) ─
 
@@ -94,162 +163,6 @@ function verifyLeaseForRuntime({ leaseToken, publicKeyPem, nowSec = Math.floor(D
   if (nowSec <= payload.exp) return { mode: "active", payload };
   if (nowSec <= payload.exp + graceSec) return { mode: "grace", payload };
   throw new Error("runtime_lease_expired_past_grace");
-}
-
-// ── policy (mirrored from @skillpack/protocol policy semantics) ─────────────
-
-function isPlainObject(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-
-function validatePolicyTimeWindow(window, prefix) {
-  if (!isPlainObject(window)) {
-    throw new Error(`${prefix}_invalid_object`);
-  }
-  const required = ["startsAtSec", "expiresAtSec", "graceUntilSec"];
-  for (const key of required) {
-    if (!Number.isInteger(window[key]) || window[key] <= 0) {
-      throw new Error(`${prefix}_invalid_${key}`);
-    }
-  }
-  if (window.expiresAtSec < window.startsAtSec) {
-    throw new Error(`${prefix}_expires_before_start`);
-  }
-  if (window.graceUntilSec < window.expiresAtSec) {
-    throw new Error(`${prefix}_grace_before_expiry`);
-  }
-  return window;
-}
-
-export function evaluateEffectiveTimeWindow(workspaceWindow, seatWindow) {
-  validatePolicyTimeWindow(workspaceWindow, "policy_time_workspace");
-  if (seatWindow === undefined || seatWindow === null) {
-    return {
-      startsAtSec: workspaceWindow.startsAtSec,
-      expiresAtSec: workspaceWindow.expiresAtSec,
-      graceUntilSec: workspaceWindow.graceUntilSec,
-    };
-  }
-  validatePolicyTimeWindow(seatWindow, "policy_time_seat");
-  return {
-    startsAtSec: Math.max(workspaceWindow.startsAtSec, seatWindow.startsAtSec),
-    expiresAtSec: Math.min(workspaceWindow.expiresAtSec, seatWindow.expiresAtSec),
-    graceUntilSec: Math.min(workspaceWindow.graceUntilSec, seatWindow.graceUntilSec),
-  };
-}
-
-export function evaluateUsageState({ actual, budget, warningPct = 100, hardStopPct = 120 }) {
-  if (!Number.isFinite(actual) || actual < 0) throw new Error("policy_usage_invalid_actual");
-  if (!Number.isFinite(budget) || budget <= 0) throw new Error("policy_usage_invalid_budget");
-  if (!Number.isFinite(warningPct) || warningPct < 0) {
-    throw new Error("policy_usage_invalid_warning_pct");
-  }
-  if (!Number.isFinite(hardStopPct) || hardStopPct < warningPct) {
-    throw new Error("policy_usage_invalid_hard_stop_pct");
-  }
-  const pct = (actual / budget) * 100;
-  if (pct > hardStopPct) return "HARD_STOP";
-  if (pct >= warningPct) return "WARNING";
-  return "NORMAL";
-}
-
-export function evaluateTimeState({ nowSec, startsAtSec, expiresAtSec, graceUntilSec }) {
-  if (!Number.isInteger(nowSec) || nowSec <= 0) {
-    throw new Error("policy_time_invalid_now");
-  }
-  validatePolicyTimeWindow(
-    { startsAtSec, expiresAtSec, graceUntilSec },
-    "policy_time_window"
-  );
-  if (nowSec < startsAtSec) return "NOT_STARTED";
-  if (nowSec <= expiresAtSec) return "ACTIVE";
-  if (nowSec <= graceUntilSec) return "GRACE";
-  return "EXPIRED";
-}
-
-export function evaluatePolicyDecision({ workspaceMode, seatMode, timeState, usageState }) {
-  if (workspaceMode === "DISABLED") {
-    return { decision: "DENY", reasonCodes: ["workspace_disabled"] };
-  }
-  if (seatMode === "DISABLED") {
-    return { decision: "DENY", reasonCodes: ["seat_disabled"] };
-  }
-  if (timeState === "NOT_STARTED") {
-    return { decision: "DENY", reasonCodes: ["time_not_started"] };
-  }
-  if (timeState === "EXPIRED") {
-    return { decision: "DENY", reasonCodes: ["time_expired"] };
-  }
-  if (usageState === "HARD_STOP") {
-    return { decision: "DENY", reasonCodes: ["usage_hard_stop"] };
-  }
-  const reasonCodes = [];
-  if (timeState === "GRACE") reasonCodes.push("time_grace");
-  if (usageState === "WARNING") reasonCodes.push("usage_warning");
-  if (reasonCodes.length > 0) {
-    return { decision: "ALLOW_WITH_WARNING", reasonCodes };
-  }
-  return { decision: "ALLOW", reasonCodes: [] };
-}
-
-export function evaluatePolicyToolCallDecision({
-  policy,
-  seatId = "default",
-  toolName,
-  currentCount = 0,
-  nowSec = Math.floor(Date.now() / 1000),
-}) {
-  if (!policy) {
-    return {
-      decision: "ALLOW",
-      reasonCodes: [],
-      usageState: "NORMAL",
-      nextCount: currentCount + 1,
-      budget: undefined,
-    };
-  }
-  if (typeof toolName !== "string" || toolName.length === 0) {
-    throw new Error("policy_tool_invalid_name");
-  }
-  if (!Number.isInteger(currentCount) || currentCount < 0) {
-    throw new Error("policy_usage_invalid_actual");
-  }
-  const seatMode = policy.seatPolicy.seats?.[seatId]?.mode ?? policy.seatPolicy.defaultMode;
-  const effectiveWindow = evaluateEffectiveTimeWindow(
-    policy.timePolicy.workspace,
-    policy.timePolicy.seatOverrides?.[seatId]
-  );
-  const timeState = evaluateTimeState({
-    nowSec,
-    startsAtSec: effectiveWindow.startsAtSec,
-    expiresAtSec: effectiveWindow.expiresAtSec,
-    graceUntilSec: effectiveWindow.graceUntilSec,
-  });
-
-  const nextCount = currentCount + 1;
-  const budget = policy.usagePolicy.toolBudgets[toolName];
-  let usageState = "NORMAL";
-  if (Number.isFinite(budget) && budget > 0) {
-    usageState = evaluateUsageState({
-      actual: nextCount,
-      budget,
-      warningPct: policy.usagePolicy.thresholds.warningPct,
-      hardStopPct: policy.usagePolicy.thresholds.hardStopPct,
-    });
-  }
-
-  return {
-    ...evaluatePolicyDecision({
-      workspaceMode: policy.workspacePolicy.mode,
-      seatMode,
-      timeState,
-      usageState,
-    }),
-    usageState,
-    nextCount,
-    budget,
-  };
 }
 
 // ── wiki (inlined from @skillpack/wiki-mcp) ───────────────────────────────────
