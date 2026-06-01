@@ -219,6 +219,49 @@ describe("route table", () => {
       seen.add(key);
     }
   });
+
+  // (method, path) → expected management flag value.
+  // Routes without this key have no `management` field (open or self-authed).
+  // /v1/leases/verify is the open SDK endpoint (no auth required).
+  // /v1/meter/upload does dual-auth inside its own handler body.
+  const expectedManagement = {
+    "GET /v1/usage/summary": true,
+    "GET /v1/providers": true,
+    "GET /v1/workspaces": true,
+    "GET /v1/providers/:providerId/customers": true,
+    "GET /v1/billing/pricing-rules": true,
+    "GET /v1/billing/invoices": true,
+    "GET /v1/billing/invoices/:id": true,
+    "GET /v1/tsa/manual-attestations": true,
+    "GET /v1/tsa/manual-attestations/latest": true,
+    "POST /v1/providers": true,
+    "POST /v1/workspaces": true,
+    "POST /v1/providers/:providerId/customers": true,
+    "POST /v1/leases/issue": true,
+    "POST /v1/policies/issue": true,
+    "POST /v1/policies/sync": true,
+    "POST /v1/billing/pricing-rules": true,
+    "POST /v1/billing/invoices/draft": true,
+    "POST /v1/billing/invoices/:id/payment-handoff": true,
+    "POST /v1/tsa/manual-attest": true,
+    // /healthz, /v1/leases/verify, /v1/meter/upload have no management flag.
+  };
+
+  test("management flag matches expected auth model", () => {
+    const byKey = new Map(routes.map((r) => [`${r.method} ${r.path}`, r]));
+    for (const [key, expected] of Object.entries(expectedManagement)) {
+      const route = byKey.get(key);
+      expect(route).toBeDefined();
+      expect(Boolean(route.management)).toBe(Boolean(expected));
+    }
+    for (const path of ["/healthz", "/v1/leases/verify", "/v1/meter/upload"]) {
+      for (const route of routes) {
+        if (route.path === path) {
+          expect(route.management).toBeUndefined();
+        }
+      }
+    }
+  });
 });
 ```
 
@@ -249,7 +292,7 @@ export const routes = [
   { method: "POST", path: "/v1/workspaces",                                 management: true, handler: placeholder("workspaces.create") },
   { method: "GET",  path: "/v1/workspaces",                                 management: true, handler: placeholder("workspaces.list") },
   { method: "POST", path: "/v1/leases/issue",                               management: true, handler: placeholder("leases.issue") },
-  { method: "POST", path: "/v1/leases/verify",                              management: true, handler: placeholder("leases.verify") },
+  { method: "POST", path: "/v1/leases/verify",                                                   handler: placeholder("leases.verify") },
   { method: "POST", path: "/v1/policies/issue",                             management: true, handler: placeholder("policies.issue") },
   { method: "POST", path: "/v1/policies/sync",                              management: true, handler: placeholder("policies.sync") },
   { method: "GET",  path: "/v1/usage/summary",                              management: true, handler: placeholder("usage.summary") },
@@ -259,7 +302,7 @@ export const routes = [
   { method: "GET",  path: "/v1/billing/invoices",                           management: true, handler: placeholder("billing.invoices.list") },
   { method: "GET",  path: "/v1/billing/invoices/:id",                       management: true, handler: placeholder("billing.invoices.get") },
   { method: "POST", path: "/v1/billing/invoices/:id/payment-handoff",       management: true, handler: placeholder("billing.invoices.payment-handoff") },
-  { method: "POST", path: "/v1/meter/upload",                               management: true, handler: placeholder("meter.upload") },
+  { method: "POST", path: "/v1/meter/upload",                                                    handler: placeholder("meter.upload") },
   { method: "POST", path: "/v1/tsa/manual-attest",                          management: true, handler: placeholder("tsa.manual-attest") },
   { method: "GET",  path: "/v1/tsa/manual-attestations",                    management: true, handler: placeholder("tsa.manual-attestations.list") },
   { method: "GET",  path: "/v1/tsa/manual-attestations/latest",            management: true, handler: placeholder("tsa.manual-attestations.latest") },
@@ -269,7 +312,7 @@ export const routes = [
 - [ ] **Step 5: Run tests to verify pass**
 
 Run: `bun test packages/core/test/route-table.test.js`
-Expected: 3 passing.
+Expected: 4 passing.
 
 - [ ] **Step 6: Commit**
 
@@ -287,6 +330,14 @@ git commit -m "feat(core): declare route table for all 22 license-server endpoin
 - Create: `packages/core/test/dispatcher.test.js` (or reuse existing `server.test.js` if the new test is a superset)
 
 The dispatcher replaces the `if`-chain. Behavior must match the current handler exactly for at least three representative routes. Then we migrate the rest in Task 4.
+
+**Auth model — three cases the dispatcher must honour:**
+
+- **Management** (`management: true`): the dispatcher calls `authenticateManagementRequest` before invoking the handler. The vast majority of routes fall here.
+- **Open** (no `management` flag, e.g. `/healthz`, `/v1/leases/verify`): the dispatcher does no auth at all. `/v1/leases/verify` is the client-side SDK endpoint — any caller may POST to it.
+- **Self-authed** (no `management` flag, e.g. `/v1/meter/upload`): the dispatcher does no auth, but the route's own handler performs dual-mode auth (it first tries `authenticateDirectMeterUpload` via the `x-skillpack-lease-token` header; if that fails it falls through to `authenticateManagementRequest`). The route descriptor carries no flag; the auth logic lives entirely inside the handler body.
+
+The dispatcher must only run management auth when `route.management === true`. A missing or falsy flag is the neutral default — the dispatcher passes the request straight to the handler.
 
 - [ ] **Step 1: Write failing dispatcher test (table-driven)**
 
