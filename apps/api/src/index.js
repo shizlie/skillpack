@@ -5,125 +5,11 @@ import {
   createD1LeaseStore,
   createDodoPaymentProvider,
   createLicenseFetchHandler,
+  createManagementAuthOptions,
   createPaymentProviderRegistry,
   createStripePaymentProvider,
+  getPemFromEnv,
 } from "@skillpack/core";
-
-function getEnvString(env, key) {
-  const value = env?.[key];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`worker_missing_env_${key}`);
-  }
-  return value;
-}
-
-function getOptionalEnvString(env, key) {
-  const value = env?.[key];
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function getPemFromEnv(env, key) {
-  const direct = env?.[key];
-  if (typeof direct === "string" && direct.length > 0) {
-    return direct;
-  }
-  const base64 = env?.[`${key}_BASE64`];
-  if (typeof base64 === "string" && base64.length > 0) {
-    if (typeof Buffer === "undefined") {
-      throw new Error("worker_nodejs_compat_required: add nodejs_compat to wrangler.jsonc compatibility_flags");
-    }
-    return Buffer.from(base64, "base64").toString("utf8");
-  }
-  throw new Error(`worker_missing_env_${key}`);
-}
-
-function readApiKey(request) {
-  return request.headers.get("x-api-key") ?? request.headers.get("X-Api-Key");
-}
-
-async function isValidSharedManagementKey(request, managementApiKey) {
-  const providedApiKey = readApiKey(request);
-  if (typeof providedApiKey !== "string" || typeof managementApiKey !== "string") {
-    return false;
-  }
-  const encoder = new TextEncoder();
-  const [providedHash, expectedHash] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(providedApiKey)),
-    crypto.subtle.digest("SHA-256", encoder.encode(managementApiKey)),
-  ]);
-  const providedBytes = new Uint8Array(providedHash);
-  const expectedBytes = new Uint8Array(expectedHash);
-  let diff = providedBytes.length ^ expectedBytes.length;
-  for (let i = 0; i < providedBytes.length && i < expectedBytes.length; i += 1) {
-    diff |= providedBytes[i] ^ expectedBytes[i];
-  }
-  return diff === 0;
-}
-
-function getManagementAuthMode(env) {
-  const mode = env?.SKILLPACK_MANAGEMENT_AUTH_MODE ?? "shared-key";
-  if (mode === "shared-key" || mode === "clerk" || mode === "hybrid") {
-    return mode;
-  }
-  throw new Error("worker_invalid_management_auth_mode");
-}
-
-function getClerkAuthorizedParties(env) {
-  const dashboardOrigin = getOptionalEnvString(env, "SKILLPACK_DASHBOARD_ORIGIN");
-  return dashboardOrigin ? [dashboardOrigin] : undefined;
-}
-
-function getClerkClient(env, { clerkClientCache, createClerkClientImpl }) {
-  if (clerkClientCache.has(env)) return clerkClientCache.get(env);
-
-  const secretKey = getEnvString(env, "CLERK_SECRET_KEY");
-  const publishableKey = getOptionalEnvString(env, "CLERK_PUBLISHABLE_KEY");
-  const clerkClient = createClerkClientImpl({
-    secretKey,
-    ...(publishableKey ? { publishableKey } : {}),
-  });
-  clerkClientCache.set(env, clerkClient);
-  return clerkClient;
-}
-
-async function authenticateClerkManagementRequest(request, env, workerOptions) {
-  const clerkClient = getClerkClient(env, workerOptions);
-  const authorizedParties = getClerkAuthorizedParties(env);
-  const state = await clerkClient.authenticateRequest(request, {
-    ...(authorizedParties ? { authorizedParties } : {}),
-  });
-  return state.isAuthenticated === true && Boolean(state.toAuth()?.userId);
-}
-
-function createManagementAuthOptions(env, workerOptions) {
-  const mode = getManagementAuthMode(env);
-  if (mode === "shared-key") {
-    return {
-      managementApiKey: getEnvString(env, "SKILLPACK_API_KEY"),
-      managementAuthenticator: null,
-    };
-  }
-  if (mode === "clerk") {
-    return {
-      managementApiKey: null,
-      managementAuthenticator: (request) =>
-        authenticateClerkManagementRequest(request, env, workerOptions),
-    };
-  }
-  const managementApiKey = getOptionalEnvString(env, "SKILLPACK_API_KEY");
-  return {
-    managementApiKey: null,
-    managementAuthenticator: async (request) => {
-      if (
-        managementApiKey &&
-        (await isValidSharedManagementKey(request, managementApiKey))
-      ) {
-        return true;
-      }
-      return authenticateClerkManagementRequest(request, env, workerOptions);
-    },
-  };
-}
 
 function getFetchHandler(env, workerOptions) {
   if (workerOptions.handlerCache.has(env)) return workerOptions.handlerCache.get(env);
@@ -149,7 +35,7 @@ function getFetchHandler(env, workerOptions) {
   const handler = createLicenseFetchHandler({
     signingPrivateKeyPem: getPemFromEnv(env, "SKILLPACK_SIGNING_PRIVATE_KEY_PEM"),
     signingPublicKeyPem: getPemFromEnv(env, "SKILLPACK_SIGNING_PUBLIC_KEY_PEM"),
-    ...createManagementAuthOptions(env, workerOptions),
+    ...createManagementAuthOptions(env, { cache: workerOptions.clerkClientCache, createClerkClientImpl: workerOptions.createClerkClientImpl }),
     leaseStore: createD1LeaseStore({ db }),
     paymentProviders: createPaymentProviderRegistry({ providers: paymentAdapters }),
   });
