@@ -1,7 +1,5 @@
 // apps/cli/src/index.js — public entry for the skillpack CLI.
 // All subcommand logic lives in commands.js (descriptors) and runner.js (dispatch).
-export { runCommand } from "./runner.js";
-
 import { runCommand } from "./runner.js";
 
 export async function runSkillpackCli(args, io = process, { fetchImpl = fetch } = {}) {
