@@ -7,6 +7,14 @@ import {
   renderDashboardHtml,
 } from "./dashboard-ui.js";
 
+import {
+  getEnvString,
+  getOptionalEnvString,
+  getManagementAuthMode,
+  getClerkClient,
+  addUpstreamAuthHeaders,
+} from "@skillpack/core";
+
 function getPublishableKey(env) {
   const value =
     env?.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
@@ -49,24 +57,12 @@ function getDashboardOrigin(request, env) {
   return new URL(request.url).origin;
 }
 
-function getClerkClient(env, { clerkClientCache, createClerkClientImpl }) {
-  if (clerkClientCache.has(env)) return clerkClientCache.get(env);
-
-  const publishableKey = getPublishableKey(env);
-  const secretKey = getSecretKey(env);
-  if (!publishableKey) throw new Error("dashboard_missing_clerk_publishable_key");
-  if (!secretKey) throw new Error("dashboard_missing_clerk_secret_key");
-
-  const clerkClient = createClerkClientImpl({
-    publishableKey,
-    secretKey,
-  });
-  clerkClientCache.set(env, clerkClient);
-  return clerkClient;
-}
-
 async function authenticateDashboardRequest(request, env, workerOptions) {
-  const clerkClient = getClerkClient(env, workerOptions);
+  const clerkClient = getClerkClient(env, {
+    cache: workerOptions.clerkClientCache,
+    createClerkClientImpl: workerOptions.createClerkClientImpl,
+    requirePublishableKey: true,
+  });
   const state = await clerkClient.authenticateRequest(request, {
     authorizedParties: [getDashboardOrigin(request, env)],
   });
@@ -76,57 +72,13 @@ async function authenticateDashboardRequest(request, env, workerOptions) {
   return state.toAuth();
 }
 
-function getRequiredEnvString(env, key) {
-  const value = env?.[key];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`dashboard_missing_env_${key}`);
-  }
-  return value;
-}
-
-function getManagementAuthMode(env) {
-  const mode =
-    env?.SKILLPACK_API_AUTH_MODE ??
-    env?.SKILLPACK_MANAGEMENT_AUTH_MODE ??
-    "shared-key";
-  if (mode === "shared-key" || mode === "clerk" || mode === "hybrid") {
-    return mode;
-  }
-  throw new Error("dashboard_invalid_management_auth_mode");
-}
-
-function getOptionalEnvString(env, key) {
-  const value = env?.[key];
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function addUpstreamAuthHeaders(headers, request, env) {
-  const mode = getManagementAuthMode(env);
-  const incomingAuthorization = request.headers.get("authorization");
-  if (mode === "clerk") {
-    if (!incomingAuthorization) throw new Error("dashboard_missing_authorization_header");
-    headers.set("authorization", incomingAuthorization);
-    return;
-  }
-  if (mode === "hybrid" && incomingAuthorization) {
-    headers.set("authorization", incomingAuthorization);
-    return;
-  }
-  const apiKey =
-    mode === "hybrid"
-      ? getOptionalEnvString(env, "SKILLPACK_API_KEY")
-      : getRequiredEnvString(env, "SKILLPACK_API_KEY");
-  if (!apiKey) throw new Error("dashboard_missing_env_SKILLPACK_API_KEY");
-  headers.set("x-api-key", apiKey);
-}
-
 async function proxyApiRequest(c, workerOptions) {
   const auth = await authenticateDashboardRequest(c.req.raw, c.env, workerOptions);
   if (!auth?.userId) {
     return c.json({ error: "unauthorized" }, 401);
   }
 
-  const apiBaseUrl = getRequiredEnvString(c.env, "SKILLPACK_API_BASE_URL");
+  const apiBaseUrl = getEnvString(c.env, "SKILLPACK_API_BASE_URL", { prefix: "dashboard" });
 
   const incoming = new URL(c.req.raw.url);
   const strippedPath = incoming.pathname.slice("/api".length) || "/";

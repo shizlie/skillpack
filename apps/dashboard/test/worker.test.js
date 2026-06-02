@@ -74,7 +74,7 @@ test("dashboard worker: proxy rejects unauthenticated requests", async () => {
   const res = await worker.fetch(
     new Request("http://local/api/v1/providers"),
     {
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+      CLERK_PUBLISHABLE_KEY:
         "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
       CLERK_SECRET_KEY: "sk_test_dummy_secret_key",
       SKILLPACK_API_BASE_URL: "https://api.skillpack.example",
@@ -106,7 +106,7 @@ test("dashboard worker: proxy can forward clerk bearer auth to api", async () =>
       headers: { authorization: "Bearer clerk-ok" },
     }),
     {
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+      CLERK_PUBLISHABLE_KEY:
         "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
       CLERK_SECRET_KEY: "sk_test_dummy_secret_key",
       SKILLPACK_API_BASE_URL: "https://api.skillpack.example",
@@ -142,7 +142,7 @@ test("dashboard worker: proxy keeps api-key mode for self-hosted deployments", a
       headers: { authorization: "Bearer clerk-ok" },
     }),
     {
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+      CLERK_PUBLISHABLE_KEY:
         "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
       CLERK_SECRET_KEY: "sk_test_dummy_secret_key",
       SKILLPACK_API_BASE_URL: "https://api.skillpack.example",
