@@ -4,17 +4,34 @@ import {
   parseArgMap,
   buildServerHeaders,
   requireServerUrl,
-  parseIntArg,
-  normalizeServerUrl,
 } from "./arg-helpers.js";
 import { fetchWithRequest } from "./http.js";
+
+function isDescriptor(d) {
+  return d && (d.required !== undefined || d.buildRequest !== undefined || d.exec !== undefined);
+}
+
+function resolveDescriptor(group, action, subAction) {
+  const level1 = commands[group];
+  if (!level1) return null;
+  const level2 = level1[action];
+  if (!level2) return null;
+  if (isDescriptor(level2)) {
+    return { descriptor: level2, argsConsumed: 2 };
+  }
+  const level3 = level2[subAction];
+  if (!isDescriptor(level3)) return null;
+  return { descriptor: level3, argsConsumed: 3 };
+}
 
 export async function runCommand(args, fetchImpl = fetch) {
   const group = args[0];
   const action = args[1];
-  const flags = parseArgMap(args.slice(2));
-  const descriptor = commands[group]?.[action];
-  if (!descriptor) return { status: 2, stderr: usageString(), body: null };
+  const subAction = args[2];
+  const resolved = resolveDescriptor(group, action, subAction);
+  if (!resolved) return { status: 2, stderr: usageString(), body: null };
+  const { descriptor, argsConsumed } = resolved;
+  const flags = parseArgMap(args.slice(argsConsumed));
 
   for (const flag of descriptor.required ?? []) {
     if (!flags[flag]) {
@@ -23,7 +40,7 @@ export async function runCommand(args, fetchImpl = fetch) {
   }
 
   if (descriptor.exec) {
-    return descriptor.exec(flags);
+    return descriptor.exec(flags, fetchImpl);
   }
 
   const serverUrl = requireServerUrl(flags);
