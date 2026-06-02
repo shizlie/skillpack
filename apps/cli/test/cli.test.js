@@ -178,3 +178,21 @@ test("bundle build creates .mcpb artifact", async () => {
   expect(fs.existsSync(outputFile)).toBe(true);
   expect(fs.statSync(outputFile).size).toBeGreaterThan(0);
 });
+test("license verify accepts a valid offline token", async () => {
+  const { priv, pub } = writeKeys();
+  const issueSink = captureIo();
+  await runSkillpackCli(
+    ["license", "issue", "--customer-id", "cust-v", "--private-key-file", priv, "--public-key-file", pub, "--now-sec", "1800000000"],
+    issueSink.io
+  );
+  const { leaseToken } = JSON.parse(issueSink.out);
+  const sink = captureIo();
+  const code = await runSkillpackCli(
+    ["license", "verify", "--lease-token", leaseToken, "--public-key-file", pub, "--now-sec", "1800000000"],
+    sink.io
+  );
+  expect(code).toBe(0);
+  const result = JSON.parse(sink.out);
+  expect(result.valid).toBe(true);
+  expect(result.payload.sub).toBe("cust-v");
+});
