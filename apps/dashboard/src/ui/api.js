@@ -1,7 +1,13 @@
 // apps/dashboard/src/ui/api.js
 
 /**
- * Creates a thin fetch wrapper.
+ * Create a thin API client.
+ *
+ * IMPORTANT: construct this inside `bootstrap()` after `loadConfig()` resolves,
+ * NOT at module scope. The current `dashboard-ui.js` reads `state.config.apiProxyBase`
+ * at call time; `createApi` captures `baseUrl` at construction time, so the api
+ * instance must be rebuilt if the base URL changes (which it does during initial
+ * config load).
  *
  * @param {object} [options]
  * @param {string}   [options.baseUrl="/api"]    Prefix for every path.
@@ -47,11 +53,14 @@ function safeJson(text) {
 }
 
 /**
- * Wires a <form> element to an api instance.
+ * Generic form-to-API submission helper.
  *
- * The form element must have:
- *   data-endpoint  — the path passed to api.call()
- *   data-method    — HTTP method (default "POST")
+ * Suitable for flat form shapes: each form field maps to a top-level body property.
+ * For forms with nested objects, File inputs, or complex transformations,
+ * write a custom handler instead.
+ *
+ * Requires the form element to have `data-endpoint="<path>"` (and optionally
+ * `data-method="<method>"`; default is POST).
  *
  * @param {HTMLFormElement} formEl
  * @param {object} options
@@ -68,6 +77,10 @@ function safeJson(text) {
 export function wireForm(formEl, { fields, output, api, onSuccess }) {
   formEl.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const endpoint = formEl.dataset.endpoint;
+    if (!endpoint) {
+      throw new Error("wireForm: missing data-endpoint on form " + (formEl.id ?? formEl.tagName));
+    }
     const data = new FormData(event.currentTarget);
     const body = {};
     for (const [name, parse] of Object.entries(fields)) {
@@ -75,12 +88,12 @@ export function wireForm(formEl, { fields, output, api, onSuccess }) {
       body[name] = parse ? parse(raw, data) : raw;
     }
     try {
-      const result = await api.call(formEl.dataset.endpoint, {
+      const result = await api.call(endpoint, {
         method: formEl.dataset.method ?? "POST",
         body,
       });
-      output.set(result);
-      if (result.status < 400 && onSuccess) await onSuccess(result.body);
+      output.set(result.body ?? result, !result.ok);
+      if (result.ok && onSuccess) await onSuccess(result.body);
     } catch (error) {
       output.set({ error: error.message }, true);
     }
