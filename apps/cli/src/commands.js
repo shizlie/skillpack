@@ -22,6 +22,7 @@ import { canonicalJson, signDetached, verifyLeaseToken } from "@skillpack/crypto
 import { createLicenseFetchHandler } from "@skillpack/core";
 import { createManualTimeAttestationContract } from "@skillpack/tsa";
 import { readKey, readJson, nowSec, normalizeServerUrl, buildServerHeaders, parseJsonLines, loadMeterEvents } from "./arg-helpers.js";
+import { DESCRIPTOR } from "./descriptor.js";
 
 function parseIntFlag(value, fallback = undefined) {
   if (value === undefined || value === null) return fallback;
@@ -611,3 +612,17 @@ export const commands = {
     },
   },
 };
+
+// Tag every leaf descriptor at module load. The tree is at most three levels
+// deep (group → action → subAction); leaves carry required/buildRequest/exec.
+function tagDescriptors(node) {
+  for (const value of Object.values(node)) {
+    if (value === null || typeof value !== "object") continue;
+    if (value.required !== undefined || value.buildRequest !== undefined || value.exec !== undefined) {
+      value[DESCRIPTOR] = true;
+    } else {
+      tagDescriptors(value);
+    }
+  }
+}
+tagDescriptors(commands);

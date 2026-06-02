@@ -6,9 +6,12 @@ import {
   requireServerUrl,
 } from "./arg-helpers.js";
 import { fetchWithRequest } from "./http.js";
+import { DESCRIPTOR } from "./descriptor.js";
+// `DESCRIPTOR` is imported from ./descriptor.js; commands.js tags leaves with
+// it at module load. The resolver here does a single property check.
 
 function isDescriptor(d) {
-  return d && (d.required !== undefined || d.buildRequest !== undefined || d.exec !== undefined);
+  return d?.[DESCRIPTOR] === true;
 }
 
 function resolveDescriptor(group, action, subAction) {
