@@ -1,30 +1,42 @@
 // Shared auth helpers for Skillpack Cloudflare Workers.
 // Both apps/api and apps/dashboard import from here; neither defines its own copy.
 
-export function getEnvString(env, key, { prefix = "worker" } = {}) {
-  const value = env?.[key];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`${prefix}_missing_env_${key}`);
+/**
+ * Single env-var reader with three modes:
+ *   - required (default): throws `${prefix}_missing_env_${key}` if absent
+ *   - optional: returns null
+ *   - allowBase64: also checks `${key}_BASE64` and decodes it (PEM use case)
+ *
+ * The three public helpers below are thin re-exports kept for back-compat
+ * with existing call sites; new code should call readEnv directly so the
+ * mode is visible at the call site.
+ */
+export function readEnv(env, key, { required = true, allowBase64 = false, prefix = "worker" } = {}) {
+  const direct = env?.[key];
+  if (typeof direct === "string" && direct.length > 0) return direct;
+  if (allowBase64) {
+    const base64 = env?.[`${key}_BASE64`];
+    if (typeof base64 === "string" && base64.length > 0) {
+      if (typeof Buffer === "undefined") {
+        throw new Error(`${prefix}_nodejs_compat_required: add nodejs_compat to wrangler.jsonc compatibility_flags`);
+      }
+      return Buffer.from(base64, "base64").toString("utf8");
+    }
   }
-  return value;
+  if (required) throw new Error(`${prefix}_missing_env_${key}`);
+  return null;
+}
+
+export function getEnvString(env, key, opts) {
+  return readEnv(env, key, { ...opts, required: true });
 }
 
 export function getOptionalEnvString(env, key) {
-  const value = env?.[key];
-  return typeof value === "string" && value.length > 0 ? value : null;
+  return readEnv(env, key, { required: false });
 }
 
-export function getPemFromEnv(env, key, { prefix = "worker" } = {}) {
-  const direct = env?.[key];
-  if (typeof direct === "string" && direct.length > 0) return direct;
-  const base64 = env?.[`${key}_BASE64`];
-  if (typeof base64 === "string" && base64.length > 0) {
-    if (typeof Buffer === "undefined") {
-      throw new Error(`${prefix}_nodejs_compat_required: add nodejs_compat to wrangler.jsonc compatibility_flags`);
-    }
-    return Buffer.from(base64, "base64").toString("utf8");
-  }
-  throw new Error(`${prefix}_missing_env_${key}`);
+export function getPemFromEnv(env, key, opts) {
+  return readEnv(env, key, { ...opts, required: true, allowBase64: true });
 }
 
 /**
@@ -34,13 +46,15 @@ export function getPemFromEnv(env, key, { prefix = "worker" } = {}) {
  * SKILLPACK_API_AUTH_MODE will continue to work when T4 migrates the dashboard.
  */
 export function getManagementAuthMode(env, { defaultMode = "shared-key" } = {}) {
-  const mode = env?.SKILLPACK_API_AUTH_MODE ?? env?.SKILLPACK_MANAGEMENT_AUTH_MODE ?? defaultMode;
+  const mode = readEnv(env, "SKILLPACK_API_AUTH_MODE", { required: false })
+    ?? readEnv(env, "SKILLPACK_MANAGEMENT_AUTH_MODE", { required: false })
+    ?? defaultMode;
   if (mode === "shared-key" || mode === "clerk" || mode === "hybrid") return mode;
   throw new Error("invalid_management_auth_mode");
 }
 
 export function getClerkAuthorizedParties(env) {
-  const dashboardOrigin = getOptionalEnvString(env, "SKILLPACK_DASHBOARD_ORIGIN");
+  const dashboardOrigin = readEnv(env, "SKILLPACK_DASHBOARD_ORIGIN", { required: false });
   return dashboardOrigin ? [dashboardOrigin] : undefined;
 }
 
@@ -57,10 +71,10 @@ export function getClerkAuthorizedParties(env) {
  */
 export function getClerkClient(env, { cache, createClerkClientImpl, requirePublishableKey = false } = {}) {
   if (cache.has(env)) return cache.get(env);
-  const secretKey = getEnvString(env, "CLERK_SECRET_KEY", { prefix: "worker" });
+  const secretKey = readEnv(env, "CLERK_SECRET_KEY", { required: true });
   const publishableKey = requirePublishableKey
-    ? getEnvString(env, "CLERK_PUBLISHABLE_KEY", { prefix: "worker" })
-    : getOptionalEnvString(env, "CLERK_PUBLISHABLE_KEY");
+    ? readEnv(env, "CLERK_PUBLISHABLE_KEY", { required: true })
+    : readEnv(env, "CLERK_PUBLISHABLE_KEY", { required: false });
   const clerkClient = createClerkClientImpl({
     secretKey,
     ...(publishableKey ? { publishableKey } : {}),
@@ -92,7 +106,7 @@ export function createManagementAuthOptions(env, { cache, createClerkClientImpl,
   if (mode === "shared-key") {
     return {
       mode,
-      managementApiKey: getEnvString(env, "SKILLPACK_API_KEY"),
+      managementApiKey: readEnv(env, "SKILLPACK_API_KEY", { required: true }),
       managementAuthenticator: null,
     };
   }
@@ -104,7 +118,7 @@ export function createManagementAuthOptions(env, { cache, createClerkClientImpl,
         authenticateClerk(request, env, { cache, createClerkClientImpl }),
     };
   }
-  const managementApiKey = getOptionalEnvString(env, "SKILLPACK_API_KEY");
+  const managementApiKey = readEnv(env, "SKILLPACK_API_KEY", { required: false });
   return {
     mode,
     managementApiKey: null,
@@ -139,8 +153,8 @@ export function addUpstreamAuthHeaders(headers, request, env, { defaultMode } = 
     return;
   }
   const apiKey = mode === "hybrid"
-    ? getOptionalEnvString(env, "SKILLPACK_API_KEY")
-    : getEnvString(env, "SKILLPACK_API_KEY", { prefix: "dashboard" });
+    ? readEnv(env, "SKILLPACK_API_KEY", { required: false })
+    : readEnv(env, "SKILLPACK_API_KEY", { required: true, prefix: "dashboard" });
   if (!apiKey) throw new Error("dashboard_missing_env_SKILLPACK_API_KEY");
   headers.set("x-api-key", apiKey);
 }
