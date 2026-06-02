@@ -221,11 +221,11 @@ export function mountPolicy(root, { api, state, onBillingSelectsRefresh, onSetMe
 
   // ── wiring ────────────────────────────────────────────────────────────────
 
-  bindAsyncForm("#provider-form", handleProviderSubmit, out);
-  bindAsyncForm("#customer-form", handleCustomerSubmit, out);
-  bindAsyncForm("#workspace-form", handleWorkspaceSubmit, out);
-  bindAsyncForm("#policy-issue-form", handlePolicyIssue, out);
-  bindAsyncForm("#policy-sync-form", handlePolicySync, out);
+  bindAsyncForm($("#provider-form"), handleProviderSubmit, out);
+  bindAsyncForm($("#customer-form"), handleCustomerSubmit, out);
+  bindAsyncForm($("#workspace-form"), handleWorkspaceSubmit, out);
+  bindAsyncForm($("#policy-issue-form"), handlePolicyIssue, out);
+  bindAsyncForm($("#policy-sync-form"), handlePolicySync, out);
 
   $("#refresh-hierarchy").addEventListener("click", () => {
     refreshHierarchy().catch((e) => out.set({ error: e.message }, true));

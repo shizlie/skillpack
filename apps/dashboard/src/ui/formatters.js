@@ -137,8 +137,8 @@ export function syncOptionalSelect(node, items, valueKey, label, placeholder) {
  * @param {function} handler Async function receiving the submit event.
  * @param {{ set(value: unknown, isError?: boolean): void }} output
  */
-export function bindAsyncForm(selector, handler, output) {
-  document.querySelector(selector).addEventListener("submit", (event) => {
+export function bindAsyncForm(el, handler, output) {
+  el.addEventListener("submit", (event) => {
     handler(event).catch((error) => {
       output.set({ error: error.message }, true);
     });

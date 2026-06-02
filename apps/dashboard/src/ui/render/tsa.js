@@ -83,7 +83,7 @@ export function mountTsa(root, { api, state }) {
 
   // ── wiring ────────────────────────────────────────────────────────────────
 
-  bindAsyncForm("#tsa-form", handleTsaSubmit, out);
+  bindAsyncForm($("#tsa-form"), handleTsaSubmit, out);
 
   $("#refresh-attestations").addEventListener("click", () => {
     refreshAttestations().catch((e) => out.set({ error: e.message }, true));

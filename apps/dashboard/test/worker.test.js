@@ -58,9 +58,9 @@ test("dashboard worker: serves assets and health", async () => {
   expect(dashboardScript).toContain("syncOptionalSelect");
   expect(dashboardScript).toContain("Any customer");
   expect(dashboardScript).toContain("Any workspace");
-  expect(dashboardScript).toContain('bindAsyncForm("#billing-pricing-rule-form"');
-  expect(dashboardScript).toContain('bindAsyncForm("#billing-invoice-draft-form"');
-  expect(dashboardScript).toContain('bindAsyncForm("#billing-payment-handoff-form"');
+  expect(dashboardScript).toContain('bindAsyncForm($("#billing-pricing-rule-form")');
+  expect(dashboardScript).toContain('bindAsyncForm($("#billing-invoice-draft-form")');
+  expect(dashboardScript).toContain('bindAsyncForm($("#billing-payment-handoff-form")');
 
   const healthRes = await worker.fetch(new Request("http://local/healthz"), {});
   expect(healthRes.status).toBe(200);

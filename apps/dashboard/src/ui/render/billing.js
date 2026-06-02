@@ -210,9 +210,9 @@ export function mountBilling(root, { api, state, onSetMetrics }) {
 
   // ── wiring ────────────────────────────────────────────────────────────────
 
-  bindAsyncForm("#billing-pricing-rule-form", handleBillingPricingRuleSubmit, out);
-  bindAsyncForm("#billing-invoice-draft-form", handleBillingInvoiceDraft, out);
-  bindAsyncForm("#billing-payment-handoff-form", handleBillingPaymentHandoff, out);
+  bindAsyncForm($("#billing-pricing-rule-form"), handleBillingPricingRuleSubmit, out);
+  bindAsyncForm($("#billing-invoice-draft-form"), handleBillingInvoiceDraft, out);
+  bindAsyncForm($("#billing-payment-handoff-form"), handleBillingPaymentHandoff, out);
 
   $("#billing-rule-provider").addEventListener("change", () => {
     refreshBillingCustomerOptions("rule");

@@ -105,7 +105,7 @@ export function mountUsage(root, { api, state, onSetMetrics }) {
 
   // ── wiring ────────────────────────────────────────────────────────────────
 
-  bindAsyncForm("#meter-upload-form", handleMeterUpload, out);
+  bindAsyncForm($("#meter-upload-form"), handleMeterUpload, out);
 
   $("#refresh-usage").addEventListener("click", () => {
     refreshUsage().catch((e) => out.set({ error: e.message }, true));
