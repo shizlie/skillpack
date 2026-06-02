@@ -27,8 +27,14 @@ export function getPemFromEnv(env, key, { prefix = "worker" } = {}) {
   throw new Error(`${prefix}_missing_env_${key}`);
 }
 
+/**
+ * Returns the management auth mode, consulting env vars in the same order as
+ * the dashboard's original binding: SKILLPACK_API_AUTH_MODE takes precedence
+ * over SKILLPACK_MANAGEMENT_AUTH_MODE. Any deployment that previously set only
+ * SKILLPACK_API_AUTH_MODE will continue to work when T4 migrates the dashboard.
+ */
 export function getManagementAuthMode(env, { defaultMode = "shared-key" } = {}) {
-  const mode = env?.SKILLPACK_MANAGEMENT_AUTH_MODE ?? env?.SKILLPACK_API_AUTH_MODE ?? defaultMode;
+  const mode = env?.SKILLPACK_API_AUTH_MODE ?? env?.SKILLPACK_MANAGEMENT_AUTH_MODE ?? defaultMode;
   if (mode === "shared-key" || mode === "clerk" || mode === "hybrid") return mode;
   throw new Error("invalid_management_auth_mode");
 }
@@ -38,10 +44,23 @@ export function getClerkAuthorizedParties(env) {
   return dashboardOrigin ? [dashboardOrigin] : undefined;
 }
 
-export function getClerkClient(env, { cache, createClerkClientImpl }) {
+/**
+ * Returns a cached Clerk client keyed on `env` (WeakMap-safe).
+ *
+ * @param {object} env - Worker environment bindings.
+ * @param {object} opts
+ * @param {WeakMap} opts.cache - WeakMap keyed on `env`; caller owns lifecycle.
+ * @param {Function} opts.createClerkClientImpl - `createClerkClient` from @clerk/backend.
+ * @param {boolean} [opts.requirePublishableKey=false] - When true, throws
+ *   `worker_missing_env_CLERK_PUBLISHABLE_KEY` if the key is absent. The
+ *   dashboard (T4) passes `true`; the API worker (T3) passes `false` or omits it.
+ */
+export function getClerkClient(env, { cache, createClerkClientImpl, requirePublishableKey = false } = {}) {
   if (cache.has(env)) return cache.get(env);
   const secretKey = getEnvString(env, "CLERK_SECRET_KEY", { prefix: "worker" });
-  const publishableKey = getOptionalEnvString(env, "CLERK_PUBLISHABLE_KEY");
+  const publishableKey = requirePublishableKey
+    ? getEnvString(env, "CLERK_PUBLISHABLE_KEY", { prefix: "worker" })
+    : getOptionalEnvString(env, "CLERK_PUBLISHABLE_KEY");
   const clerkClient = createClerkClientImpl({
     secretKey,
     ...(publishableKey ? { publishableKey } : {}),
