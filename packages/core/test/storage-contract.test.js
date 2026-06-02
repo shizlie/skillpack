@@ -45,7 +45,7 @@ describe("createLeaseStore (contract via bun:sqlite)", () => {
     expect(list).toHaveLength(1);
   });
 
-  test("appendMeterEvents is atomic", async () => {
+  test("appendMeterEvents writes events and is queryable", async () => {
     const store = createLeaseStore(makeExec());
     await store.appendMeterEvents([{
       eventId: "e1", providerId: "p1", customerId: "c1", workspaceId: "w1",
@@ -153,6 +153,66 @@ describe("createLeaseStore (contract via bun:sqlite)", () => {
     // Two calls to any method triggers ensureReady twice (memoized)
     await store.listProviders();
     await store.listProviders();
+  });
+
+  test("getAcceptedUsageEvents filters by period", async () => {
+    const store = createLeaseStore(makeExec());
+    const base = {
+      eventId: "e1", providerId: "p1", customerId: "c1", workspaceId: "w1",
+      seatId: "default", tool: "wiki_search", eventKind: "tool_call",
+      usage: { unit: "tool_call", delta: 1 }, eventSeq: 0, eventHash: null,
+      prevHash: "GENESIS", rawEvent: {},
+    };
+    await store.appendMeterEvents([
+      { ...base, eventId: "e1", eventAtSec: 40 },
+      { ...base, eventId: "e2", eventAtSec: 100 },
+    ]);
+    const filtered = await store.getAcceptedUsageEvents({
+      workspaceId: "w1", periodStartSec: 50, periodEndSec: 150,
+    });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].eventId).toBe("e2");
+    expect(filtered[0].eventAtSec).toBe(100);
+    expect(filtered[0].workspaceId).toBe("w1");
+    const all = await store.getAcceptedUsageEvents({ workspaceId: "w1" });
+    expect(all).toHaveLength(2);
+  });
+
+  test("saveWorkspace throws customer_not_found when customer absent", async () => {
+    const store = createLeaseStore(makeExec());
+    await store.saveProvider({ providerId: "p1", name: "Acme" });
+    await expect(
+      store.saveWorkspace({
+        workspaceId: "w1", providerId: "p1", customerId: "c1", name: "WS",
+      })
+    ).rejects.toThrow("customer_not_found");
+  });
+
+  test("saveWorkspace throws workspace_identity_mismatch on provider change", async () => {
+    const store = createLeaseStore(makeExec());
+    await store.saveProvider({ providerId: "p1", name: "Acme" });
+    await store.saveProvider({ providerId: "p2", name: "Beta" });
+    await store.saveCustomer("p1", { customerId: "c1", name: "Cust" });
+    await store.saveCustomer("p2", { customerId: "c2", name: "Cust2" });
+    await store.saveWorkspace({
+      workspaceId: "w1", providerId: "p1", customerId: "c1", name: "WS",
+    });
+    await expect(
+      store.saveWorkspace({
+        workspaceId: "w1", providerId: "p2", customerId: "c2", name: "WS",
+      })
+    ).rejects.toThrow("workspace_identity_mismatch");
+  });
+
+  test("listCustomers returns customers for a provider", async () => {
+    const store = createLeaseStore(makeExec());
+    await store.saveProvider({ providerId: "p1", name: "Acme" });
+    await store.saveCustomer("p1", { customerId: "c1", name: "C1" });
+    const list = await store.listCustomers("p1");
+    expect(list).toHaveLength(1);
+    expect(list[0].customerId).toBe("c1");
+    const empty = await store.listCustomers("nonexistent");
+    expect(empty).toHaveLength(0);
   });
 });
 

@@ -702,6 +702,7 @@ export function createLeaseStore({ exec, runInTransaction }) {
         leaseJti: row.lease_jti ?? null,
         tool: row.tool_name,
         unit: USAGE_UNIT_TOOL_CALL,
+        // Number() coercion: bun:sqlite returns SUM as a number; D1 returns a string. The ?? 0 is defensive.
         totalCalls: Number(row.total_calls ?? 0),
       }));
     },
