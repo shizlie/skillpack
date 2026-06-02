@@ -21,29 +21,7 @@ import crypto from "node:crypto";
 import { canonicalJson, signDetached, verifyLeaseToken } from "@skillpack/crypto";
 import { createLicenseFetchHandler } from "@skillpack/core";
 import { createManualTimeAttestationContract } from "@skillpack/tsa";
-
-// ---------------------------------------------------------------------------
-// Private helpers (not exported)
-// ---------------------------------------------------------------------------
-
-function readKey(filePath, flagName) {
-  if (!filePath) throw new Error(`missing_${flagName}`);
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function readJson(filePath, flagName) {
-  if (!filePath) throw new Error(`missing_${flagName}`);
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
-}
-
-function nowSec() {
-  return Math.floor(Date.now() / 1000);
-}
-
-function normalizeServerUrl(serverUrl) {
-  if (!serverUrl) return null;
-  return serverUrl.endsWith("/") ? serverUrl.slice(0, -1) : serverUrl;
-}
+import { readKey, readJson, nowSec, normalizeServerUrl, buildServerHeaders, parseJsonLines, loadMeterEvents } from "./arg-helpers.js";
 
 function parseIntFlag(value, fallback = undefined) {
   if (value === undefined || value === null) return fallback;
@@ -51,35 +29,6 @@ function parseIntFlag(value, fallback = undefined) {
   if (!Number.isInteger(parsed)) throw new Error("invalid_integer_arg:" + value);
   return parsed;
 }
-
-function buildServerHeaders(flags) {
-  const apiKey = flags["api-key"];
-  return apiKey ? { "x-api-key": apiKey } : undefined;
-}
-
-function parseJsonLines(filePath) {
-  const raw = fs.readFileSync(filePath, "utf8");
-  return raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
-}
-
-function loadMeterEvents(filePath) {
-  const absolute = path.resolve(filePath);
-  if (!fs.existsSync(absolute)) throw new Error("missing_events_file");
-  const raw = fs.readFileSync(absolute, "utf8");
-  if (!raw.trim()) return [];
-  if (absolute.endsWith(".jsonl")) {
-    return parseJsonLines(absolute);
-  }
-  const parsed = JSON.parse(raw);
-  if (Array.isArray(parsed)) return parsed;
-  if (Array.isArray(parsed?.events)) return parsed.events;
-  throw new Error("meter_events_file_invalid_shape");
-}
-
 function sha256Hex(input) {
   const buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
   return crypto.createHash("sha256").update(buf).digest("hex");

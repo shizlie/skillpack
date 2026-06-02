@@ -55,7 +55,7 @@ export function buildServerHeaders(flags) {
   return apiKey ? { "x-api-key": apiKey } : undefined;
 }
 
-function parseJsonLines(filePath) {
+export function parseJsonLines(filePath) {
   const raw = fs.readFileSync(filePath, "utf8");
   return raw
     .split(/\r?\n/)
