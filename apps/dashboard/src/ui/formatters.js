@@ -133,7 +133,7 @@ export function syncOptionalSelect(node, items, valueKey, label, placeholder) {
  * Attach an async submit handler to a form, routing caught errors to an
  * output controller.
  *
- * @param {string} selector  CSS selector for the <form> element.
+ * @param {Element} el  The <form> element.
  * @param {function} handler Async function receiving the submit event.
  * @param {{ set(value: unknown, isError?: boolean): void }} output
  */

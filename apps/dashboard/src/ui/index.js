@@ -1,5 +1,5 @@
 // apps/dashboard/src/ui/index.js
-// Browser entry point — bundled by dashboard-ui.js via Bun.build().
+// Browser entry point — pre-bundled by scripts/build-dashboard.js at build time.
 import { createApi } from "./api.js";
 import { escapeHtml, toLocalValue } from "./formatters.js";
 import { mountPolicy } from "./render/policy.js";
