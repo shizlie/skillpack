@@ -9,8 +9,6 @@ import {
 
 import {
   getEnvString,
-  getOptionalEnvString,
-  getManagementAuthMode,
   getClerkClient,
   addUpstreamAuthHeaders,
 } from "@skillpack/core";
