@@ -9,3 +9,4 @@ export {
   createPaymentProviderRegistry,
   createStripePaymentProvider,
 } from "./payment-providers.js";
+export * from "./worker-auth.js";
