@@ -1,7 +1,5 @@
 import { expect, test } from "bun:test";
-
-process.env.SKILLPACK_RUNTIME_SKIP_MAIN = "1";
-const { validatePolicySnapshot, evaluatePolicyToolCallDecision } = await import("../src/server.mjs");
+import { validatePolicySnapshot, evaluatePolicyToolCallDecision } from "@skillpack/protocol";
 
 function makeBasePolicy(nowSec, overrides = {}) {
   const base = {

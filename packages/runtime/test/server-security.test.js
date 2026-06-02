@@ -7,8 +7,8 @@ import {
   sha256Hex,
   isUnsafeArchivePath,
   ensureSafePathWithin,
-  canonicalJson,
 } from "../src/server-util.mjs";
+import { canonicalJson } from "@skillpack/crypto";
 
 // ── sha256Hex ─────────────────────────────────────────────────────────────────
 

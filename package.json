@@ -1,7 +1,7 @@
 {
   "name": "skillpack",
   "private": true,
-  "version": "0.6.3.0",
+  "version": "0.7.0.0",
   "description": "Commerce layer for signed, license-gated MCPB skill bundles.",
   "license": "Apache-2.0",
   "packageManager": "bun@1.3.11",
@@ -10,6 +10,8 @@
     "apps/*"
   ],
   "scripts": {
+    "build:dashboard": "bun scripts/build-dashboard.js",
+    "pretest": "bun run build:dashboard",
     "test": "bun test",
     "test:unit": "bun test obsidian-query.test.ts packages/*/test apps/*/test",
     "test:wiki-rag": "bun test wiki-rag/test",

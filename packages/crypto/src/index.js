@@ -9,7 +9,7 @@ const LEASE_VERSION = "spk1";
 const DEFAULT_CLOCK_SKEW_SEC = 300;
 const GENESIS_HASH = "GENESIS";
 
-function toBase64Url(input) {
+export function toBase64Url(input) {
   const buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
   return buf
     .toString("base64")
@@ -18,7 +18,7 @@ function toBase64Url(input) {
     .replace(/=+$/g, "");
 }
 
-function fromBase64Url(value) {
+export function fromBase64Url(value) {
   const padded = value + "===".slice((value.length + 3) % 4);
   const base64 = padded.replace(/-/g, "+").replace(/_/g, "/");
   return Buffer.from(base64, "base64");

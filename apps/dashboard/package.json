@@ -6,6 +6,7 @@
   "main": "src/index.js",
   "dependencies": {
     "@clerk/backend": "^2.23.0",
+    "@skillpack/core": "workspace:*",
     "@skillpack/crypto": "workspace:*",
     "hono": "^4.8.2"
   },

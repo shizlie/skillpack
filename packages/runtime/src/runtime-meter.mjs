@@ -1,39 +1,8 @@
 import crypto from "node:crypto";
+import { canonicalJson, toBase64Url, fromBase64Url } from "@skillpack/crypto";
 
 export const GENESIS_HASH = "GENESIS";
 
-function toBase64Url(input) {
-  const buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
-  return buf
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
-
-function fromBase64Url(value) {
-  const padded = value + "===".slice((value.length + 3) % 4);
-  return Buffer.from(
-    padded.replace(/-/g, "+").replace(/_/g, "/"),
-    "base64"
-  );
-}
-
-function sortJson(value) {
-  if (Array.isArray(value)) return value.map(sortJson);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, sortJson(value[key])])
-    );
-  }
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(sortJson(value));
-}
 
 function validateMeterEvent(event) {
   if (!event || typeof event !== "object" || Array.isArray(event)) {
