@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [0.7.0.0] - 2026-06-02
+
+### Added
+
+- Declarative route table for the license server. All 22 management endpoints (providers, customers, workspaces, leases, policies, meter, usage, billing, TSA) are declared once in `packages/core/src/routes.js` and dispatched through a single `dispatch()` wrapper. Adding a new endpoint is a one-line table entry.
+- Shared `packages/core/src/worker-auth` module that exports `readEnv`, `getClerkClient`, `isValidSharedManagementKey`, `getManagementAuthMode`, `addUpstreamAuthHeaders`, and friends. Both the API worker (`apps/api/src/index.js`) and the dashboard worker (`apps/dashboard/src/index.js`) import from a single source of truth; their private copies of these helpers are gone.
+- Shared `packages/core/src/storage-contract` module that fronts a `createLeaseStore({ sql })` factory. The D1 and SQLite adapters are now ~25-line wrappers around the same schema and SQL — no more 800-line near-duplicate files.
+- `apps/cli/src/descriptor.js` exports a `DESCRIPTOR` symbol that the CLI runner checks instead of duck-typing on `(required|buildRequest|exec)`. Resolves a runner↔commands import cycle by living in its own module.
+- Dashboard UI decomposition. The 1,353-line `apps/dashboard/src/dashboard-ui.js` is now a re-export shim; live modules live under `apps/dashboard/src/ui/{index,api,formatters,render-html}.js` + `ui/render/{policy,usage,billing,tsa}.js` + `ui/styles.css`. A build-time pre-bundle (`scripts/build-dashboard.js`) keeps the runtime JS deployable to Cloudflare Workers.
+- Runtime policy and crypto helpers now import from their canonical homes (`@skillpack/protocol`, `@skillpack/crypto`); the runtime-side shadows in `server.mjs` and `server-util.mjs` are gone.
+- Test suite for the refactor: 7 new test files (`storage-contract.test.js`, `worker-auth.test.js`, `routes.test.js`, `dispatcher.test.js`, `route-table.test.js`, `no-duplicate-definitions.test.js`, `policy.test.js`) plus a table-driven rewrite of `cli.test.js`.
+
+### Changed
+
+- `bun test packages/ apps/` runs 427 tests across 30 files with 912 expects and passes in ~1 second.
+- CLI's `runCommand` flows through a single 3-level descriptor table (`group → action → subAction`); `apps/cli/src/index.js` shrank from 700 lines to 37. Adding a subcommand is a descriptor entry, not a new function.
+- `packages/core/src/server.js` shrank from 655 to 146 lines as routing moved to the declarative table. The legacy `if (request.method === X && url.pathname === Y)` dispatcher is gone.
+- `apps/api/src/index.js` shrank from 235 to 118 lines; `apps/dashboard/src/index.js` from 215 to 164. Both lost their private auth helpers in favor of `@skillpack/core/worker-auth`.
+- Route handler error envelopes now flow through `dispatch(handler, { errorEnvelope })`. 19 of 22 handlers lost their try/catch boilerplate; `uploadMeter` (3-path auth) and `getInvoice` (explicit 404) keep their own envelopes. Single point of change for future error-envelope policy.
+
+### Fixed
+
+- `getManagementAuthMode` now consults `SKILLPACK_API_AUTH_MODE` first (the canonical env var name) and falls back to the legacy `SKILLPACK_MANAGEMENT_AUTH_MODE`, preserving in-flight deployments that set only the legacy var.
+- `getClerkClient` supports `requirePublishableKey: true` so the dashboard's session-auth path can require both `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY` while the API worker remains publishable-key-optional.
+- `apps/cli/src/commands.js` imports 7 helpers from `./arg-helpers.js` instead of carrying byte-for-byte duplicates (was caught by a code-quality re-audit).
+- Runtime's `policy-enforcement.test.js` imports `validatePolicySnapshot` and `evaluatePolicyToolCallDecision` from `@skillpack/protocol` (the canonical implementation) instead of the shadow copy in `runtime/src/server.mjs`.
+- A `no-duplicate-definitions` test now guards `verifyLeaseForRuntime` and the canonical crypto helpers from being re-declared in `runtime/src/server.mjs`.
+
 ## [Unreleased]
 
 ## [0.6.3.0] - 2026-05-01
