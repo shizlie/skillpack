@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test, describe } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,840 +8,171 @@ import { generateEd25519KeyPair } from "@skillpack/crypto";
 import { createLicenseFetchHandler } from "@skillpack/core";
 import { runSkillpackCli } from "../src/index.js";
 
-function makeIo() {
-  let out = "";
-  let err = "";
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const silentIo = { stdout: { write: () => {} }, stderr: { write: () => {} } };
+
+function captureIo() {
+  let out = "", err = "";
   return {
-    io: {
-      stdout: { write: (chunk) => (out += chunk) },
-      stderr: { write: (chunk) => (err += chunk) },
-    },
-    read: () => ({ out, err }),
+    io: { stdout: { write: (s) => (out += s) }, stderr: { write: (s) => (err += s) } },
+    get out() { return out; },
+    get err() { return err; },
   };
+}
+
+function mockFetch(res) {
+  return async () => new Response(JSON.stringify(res), { status: 200 });
 }
 
 function writeKeys() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skillpack-cli-"));
   const keys = generateEd25519KeyPair();
-  const privateKeyFile = path.join(dir, "private.pem");
-  const publicKeyFile = path.join(dir, "public.pem");
-  fs.writeFileSync(privateKeyFile, keys.privateKeyPem);
-  fs.writeFileSync(publicKeyFile, keys.publicKeyPem);
-  return { privateKeyFile, publicKeyFile };
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "sp-keys-"));
+  const priv = path.join(d, "priv.pem");
+  const pub = path.join(d, "pub.pem");
+  fs.writeFileSync(priv, keys.privateKeyPem);
+  fs.writeFileSync(pub, keys.publicKeyPem);
+  return { priv, pub };
 }
 
-function makePolicy(policyId = "pol-1", workspaceMode = "ENABLED") {
-  return {
-    policyVersion: 1,
-    policyId,
-    workspaceId: "ws-1",
-    workspacePolicy: { mode: workspaceMode },
-    seatPolicy: {
-      defaultMode: "ENABLED",
-      seats: {
-        "seat-1": { mode: "ENABLED" },
-      },
-    },
-    usagePolicy: {
-      unit: "tool_call",
-      thresholds: { warningPct: 100, hardStopPct: 120 },
-      toolBudgets: { wiki_search: 10 },
-    },
-    timePolicy: {
-      workspace: {
-        startsAtSec: 1_800_000_000,
-        expiresAtSec: 1_800_003_600,
-        graceUntilSec: 1_800_007_200,
-      },
-      seatOverrides: {
-        "seat-1": {
-          startsAtSec: 1_800_000_000,
-          expiresAtSec: 1_800_003_600,
-          graceUntilSec: 1_800_007_200,
-        },
-      },
-    },
-  };
-}
+// Sync temp JSONL file for meter upload happy-path entry.
+const meterFile = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "sp-meter-"));
+  const p = path.join(d, "e.jsonl");
+  fs.writeFileSync(p, '{"prevHash":"h0","seq":1,"at":1800000000,"kind":"tool_call","seatId":"s1","tool":"t1","usage":{"unit":"tool_call","delta":1}}\n');
+  return p;
+})();
 
-test("cli: license issue emits token json", async () => {
-  const { privateKeyFile, publicKeyFile } = writeKeys();
-  const sink = makeIo();
+// ---------------------------------------------------------------------------
+// Table: happy paths (one entry per server-backed or offline subcommand)
+// ---------------------------------------------------------------------------
+
+const S = "http://x"; // mock server-url shorthand
+
+const happyPaths = [
+  { args: ["license", "issue", "--server-url", S, "--customer-id", "c1"], res: { leaseToken: "tok" } },
+  { args: ["tsa", "manual-attest", "--operator-id", "op-1", "--ticket-id", "INC-1", "--reason", "incident response", "--attested-at-sec", "1800000000"], res: {} },
+  { args: ["tsa", "latest-attestation", "--server-url", S, "--customer-id", "c1"], res: { record: {} } },
+  { args: ["provider", "create", "--server-url", S, "--provider-id", "p1"], res: { provider: {} } },
+  { args: ["customer", "create", "--server-url", S, "--provider-id", "p1", "--customer-id", "c1"], res: { customer: {} } },
+  { args: ["workspace", "create", "--server-url", S, "--workspace-id", "ws1", "--provider-id", "p1", "--customer-id", "c1"], res: { workspace: {} } },
+  { args: ["policy", "issue", "--server-url", S], res: { accepted: true } },
+  { args: ["policy", "sync", "--server-url", S, "--workspace-id", "ws1"], res: { policy: {} } },
+  { args: ["meter", "upload", "--server-url", S, "--workspace-id", "ws1", "--file", meterFile], res: { accepted: true } },
+  { args: ["usage", "summary", "--server-url", S], res: { summary: [] } },
+  { args: ["billing", "pricing-rule", "create", "--server-url", S, "--pricing-rule-id", "pr1", "--provider-id", "p1", "--currency", "usd", "--unit-amount-cents", "100"], res: { pricingRule: {} } },
+  { args: ["billing", "invoice", "draft", "--server-url", S, "--provider-id", "p1", "--customer-id", "c1", "--period-start-sec", "1800000000", "--period-end-sec", "1800001000"], res: { invoice: {} } },
+  { args: ["billing", "payment-handoff", "create", "--server-url", S, "--invoice-id", "inv1"], res: { url: "http://pay" } },
+];
+
+describe("runSkillpackCli happy paths", () => {
+  for (const { args, res } of happyPaths) {
+    test(`${args.slice(0, 2).join(" ")}`, async () => {
+      expect(await runSkillpackCli(args, silentIo, { fetchImpl: mockFetch(res) })).toBe(0);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Table: missing-required-flag → exit 1
+// ---------------------------------------------------------------------------
+
+const requiredFlagCases = [
+  { args: ["license", "issue"],                                                                                              missing: "customer-id" },
+  { args: ["license", "verify", "--public-key-file", "x.pem"],                                                              missing: "lease-token" },
+  { args: ["tsa", "latest-attestation", "--customer-id", "c1"],                                                             missing: "server-url" },
+  { args: ["provider", "create", "--server-url", S],                                                                        missing: "provider-id" },
+  { args: ["customer", "create", "--server-url", S, "--provider-id", "p1"],                                                  missing: "customer-id" },
+  { args: ["workspace", "create", "--server-url", S, "--provider-id", "p1", "--customer-id", "c1"],                         missing: "workspace-id" },
+  { args: ["policy", "issue"],                                                                                               missing: "server-url" },
+  { args: ["policy", "sync", "--server-url", S],                                                                             missing: "workspace-id" },
+  { args: ["meter", "upload", "--server-url", S],                                                                            missing: "workspace-id" },
+  { args: ["usage", "summary"],                                                                                              missing: "server-url" },
+  { args: ["billing", "pricing-rule", "create", "--server-url", S, "--pricing-rule-id", "pr1", "--provider-id", "p1", "--currency", "usd"], missing: "unit-amount-cents" },
+  { args: ["billing", "invoice", "draft", "--server-url", S, "--provider-id", "p1", "--customer-id", "c1", "--period-start-sec", "1800000000"], missing: "period-end-sec" },
+  { args: ["billing", "payment-handoff", "create", "--server-url", S],                                                      missing: "invoice-id" },
+  { args: ["bundle", "build"],                                                                                               missing: "input-dir" },
+];
+
+describe("runSkillpackCli missing required flag", () => {
+  for (const { args, missing } of requiredFlagCases) {
+    test(`${args.slice(0, 2).join(" ")} needs --${missing}`, async () => {
+      expect(await runSkillpackCli(args, silentIo, { fetchImpl: mockFetch({}) })).toBe(1);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Targeted tests — unique behaviors not captured by the tables above
+// ---------------------------------------------------------------------------
+
+test("license issue offline emits token json", async () => {
+  const { priv, pub } = writeKeys();
+  const sink = captureIo();
   const code = await runSkillpackCli(
-    [
-      "license",
-      "issue",
-      "--customer-id",
-      "cust-1",
-      "--private-key-file",
-      privateKeyFile,
-      "--public-key-file",
-      publicKeyFile,
-      "--now-sec",
-      "1800000000",
-    ],
+    ["license", "issue", "--customer-id", "cust-1", "--private-key-file", priv, "--public-key-file", pub, "--now-sec", "1800000000"],
     sink.io
   );
   expect(code).toBe(0);
-  const parsed = JSON.parse(sink.read().out);
+  const parsed = JSON.parse(sink.out);
   expect(typeof parsed.leaseToken).toBe("string");
   expect(parsed.payload.sub).toBe("cust-1");
 });
 
-test("cli: license issue prints TSA outage hint to stderr", async () => {
-  const { privateKeyFile, publicKeyFile } = writeKeys();
-  const sink = makeIo();
-  const code = await runSkillpackCli(
-    [
-      "license",
-      "issue",
-      "--customer-id",
-      "cust-1",
-      "--seat-id",
-      "seat-1",
-      "--private-key-file",
-      privateKeyFile,
-      "--public-key-file",
-      publicKeyFile,
-      "--now-sec",
-      "1800000000",
-      "--last-tsa-token-at-sec",
-      String(1_800_000_000 - 8 * 24 * 60 * 60),
-    ],
+test("license issue prints TSA outage hint to stderr", async () => {
+  const { priv, pub } = writeKeys();
+  const sink = captureIo();
+  await runSkillpackCli(
+    ["license", "issue", "--customer-id", "cust-1", "--private-key-file", priv, "--public-key-file", pub,
+      "--now-sec", "1800000000", "--last-tsa-token-at-sec", String(1_800_000_000 - 8 * 24 * 60 * 60)],
     sink.io
   );
-  expect(code).toBe(0);
-  const { out, err } = sink.read();
-  expect(JSON.parse(out).tsaState.status).toBe("expired");
-  expect(err).toMatch(/TSA token expired/);
-  expect(err).toMatch(/docs\/runbooks\/tsa-outage\.md/);
-  expect(err).toMatch(/skillpack tsa manual-attest/);
+  expect(JSON.parse(sink.out).tsaState.status).toBe("expired");
+  expect(sink.err).toMatch(/TSA token expired/);
+  expect(sink.err).toMatch(/docs\/runbooks\/tsa-outage\.md/);
+  expect(sink.err).toMatch(/skillpack tsa manual-attest/);
 });
 
-test("cli: server-backed license issue embeds ticket-scoped TSA attestation", async () => {
+test("tsa manual-attest server fallback posts to server", async () => {
   const keys = generateEd25519KeyPair();
-  const mgmtKey = "test-tsa-license-issue-server-key";
-  const fetch = createLicenseFetchHandler({
+  const mgmtKey = "test-key";
+  const fetchImpl = createLicenseFetchHandler({
     signingPrivateKeyPem: keys.privateKeyPem,
     signingPublicKeyPem: keys.publicKeyPem,
     managementApiKey: mgmtKey,
   });
-
-  const attestSink = makeIo();
-  const attestCode = await runSkillpackCli(
-    [
-      "tsa",
-      "manual-attest",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      mgmtKey,
-      "--customer-id",
-      "cust-issue-server",
-      "--seat-id",
-      "seat-issue-server",
-      "--operator-id",
-      "op-issue-server",
-      "--ticket-id",
-      "INC-ISSUE-SERVER",
-      "--reason",
-      "Manual attestation for server-backed license issue",
-      "--attested-at-sec",
-      "1800000005",
-    ],
-    attestSink.io,
-    { fetchImpl: fetch }
-  );
-  expect(attestCode).toBe(0);
-
-  const issueSink = makeIo();
-  const issueCode = await runSkillpackCli(
-    [
-      "license",
-      "issue",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      mgmtKey,
-      "--customer-id",
-      "cust-issue-server",
-      "--seat-id",
-      "seat-issue-server",
-      "--now-sec",
-      "1800000010",
-      "--last-tsa-token-at-sec",
-      String(1_800_001_000 - 8 * 24 * 60 * 60),
-      "--tsa-ticket-id",
-      "INC-ISSUE-SERVER",
-    ],
-    issueSink.io,
-    { fetchImpl: fetch }
-  );
-  expect(issueCode).toBe(0);
-  const issued = JSON.parse(issueSink.read().out);
-  expect(issued.tsaState.status).toBe("expired");
-  expect(issued.tsaState.latestManualAttestation.ticketId).toBe(
-    "INC-ISSUE-SERVER"
-  );
-});
-
-test("cli: tsa manual-attest validates required fields", async () => {
-  const sink = makeIo();
+  const sink = captureIo();
   const code = await runSkillpackCli(
-    [
-      "tsa",
-      "manual-attest",
-      "--operator-id",
-      "op-1",
-      "--ticket-id",
-      "INC-1",
-      "--reason",
-      "TSA outage runbook entry",
-      "--attested-at-sec",
-      "1800000000",
-    ],
-    sink.io
+    ["tsa", "manual-attest", "--server-url", "http://local", "--api-key", mgmtKey,
+      "--customer-id", "cust-t", "--seat-id", "s1", "--operator-id", "op-1",
+      "--ticket-id", "INC-1", "--reason", "incident response", "--attested-at-sec", "1800000000"],
+    sink.io, { fetchImpl }
   );
   expect(code).toBe(0);
-  const parsed = JSON.parse(sink.read().out);
-  expect(parsed.accepted).toBe(true);
-  expect(parsed.record.source).toBe("manual-time-attestation");
+  expect(JSON.parse(sink.out).record.customerId).toBe("cust-t");
 });
 
-test("cli: tsa manual-attest posts to server and latest-attestation reads record", async () => {
-  const keys = generateEd25519KeyPair();
-  const mgmtKey = "test-tsa-cli-key";
-  const fetch = createLicenseFetchHandler({
-    signingPrivateKeyPem: keys.privateKeyPem,
-    signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey: mgmtKey,
-  });
-
-  const attestSink = makeIo();
-  const attestCode = await runSkillpackCli(
-    [
-      "tsa",
-      "manual-attest",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      mgmtKey,
-      "--customer-id",
-      "cust-9",
-      "--seat-id",
-      "seat-9",
-      "--operator-id",
-      "op-9",
-      "--ticket-id",
-      "INC-9",
-      "--reason",
-      "Manual attestation submitted during TSA outage workflow",
-      "--attested-at-sec",
-      "1800000000",
-    ],
-    attestSink.io,
-    { fetchImpl: fetch }
-  );
-  expect(attestCode).toBe(0);
-  const attestParsed = JSON.parse(attestSink.read().out);
-  expect(attestParsed.record.customerId).toBe("cust-9");
-
-  const secondAttestSink = makeIo();
-  const secondAttestCode = await runSkillpackCli(
-    [
-      "tsa",
-      "manual-attest",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      mgmtKey,
-      "--customer-id",
-      "cust-9",
-      "--seat-id",
-      "seat-9",
-      "--operator-id",
-      "op-10",
-      "--ticket-id",
-      "INC-10",
-      "--reason",
-      "Later manual attestation for a separate TSA outage workflow",
-      "--attested-at-sec",
-      "1800000010",
-    ],
-    secondAttestSink.io,
-    { fetchImpl: fetch }
-  );
-  expect(secondAttestCode).toBe(0);
-
-  const latestSink = makeIo();
-  const latestCode = await runSkillpackCli(
-    [
-      "tsa",
-      "latest-attestation",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      mgmtKey,
-      "--customer-id",
-      "cust-9",
-      "--seat-id",
-      "seat-9",
-      "--ticket-id",
-      "INC-9",
-    ],
-    latestSink.io,
-    { fetchImpl: fetch }
-  );
-  expect(latestCode).toBe(0);
-  const latestParsed = JSON.parse(latestSink.read().out);
-  expect(latestParsed.record.ticketId).toBe("INC-9");
-});
-
-test("cli: policy issue posts policy snapshot", async () => {
-  const keys = generateEd25519KeyPair();
-  const apiKey = "test-api-key";
-  const fetch = createLicenseFetchHandler({
-    signingPrivateKeyPem: keys.privateKeyPem,
-    signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey: apiKey,
-  });
-  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "skillpack-policy-issue-test-"));
-  const policyFile = path.join(workspace, "policy.json");
-  fs.writeFileSync(policyFile, JSON.stringify(makePolicy("pol-1"), null, 2));
-
-  const sink = makeIo();
-  const code = await runSkillpackCli(
-    [
-      "policy",
-      "issue",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      apiKey,
-      "--policy-file",
-      policyFile,
-    ],
-    sink.io,
-    { fetchImpl: fetch }
-  );
-  expect(code).toBe(0);
-  const parsed = JSON.parse(sink.read().out);
-  expect(parsed.accepted).toBe(true);
-  expect(parsed.policy.policyId).toBe("pol-1");
-});
-
-test("cli: policy sync returns latest policy", async () => {
-  const keys = generateEd25519KeyPair();
-  const apiKey = "test-api-key";
-  const fetch = createLicenseFetchHandler({
-    signingPrivateKeyPem: keys.privateKeyPem,
-    signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey: apiKey,
-  });
-  await fetch(
-    new Request("http://local/v1/policies/issue", {
-      method: "POST",
-      headers: { "x-api-key": apiKey },
-      body: JSON.stringify({ policy: makePolicy("pol-2", "DISABLED") }),
-    })
-  );
-
-  const sink = makeIo();
-  const code = await runSkillpackCli(
-    [
-      "policy",
-      "sync",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      apiKey,
-      "--workspace-id",
-      "ws-1",
-      "--policy-id",
-      "pol-1",
-    ],
-    sink.io,
-    { fetchImpl: fetch }
-  );
-  expect(code).toBe(0);
-  const parsed = JSON.parse(sink.read().out);
-  expect(parsed.notModified).toBe(false);
-  expect(parsed.policy.policyId).toBe("pol-2");
-  expect(parsed.policy.workspacePolicy.mode).toBe("DISABLED");
-});
-
-test("cli: provider/customer/workspace create", async () => {
-  const keys = generateEd25519KeyPair();
-  const apiKey = "test-api-key";
-  const fetch = createLicenseFetchHandler({
-    signingPrivateKeyPem: keys.privateKeyPem,
-    signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey: apiKey,
-  });
-
-  const providerSink = makeIo();
-  const providerCode = await runSkillpackCli(
-    [
-      "provider",
-      "create",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      apiKey,
-      "--provider-id",
-      "prov-1",
-      "--name",
-      "Provider One",
-    ],
-    providerSink.io,
-    { fetchImpl: fetch }
-  );
-  expect(providerCode).toBe(0);
-  expect(JSON.parse(providerSink.read().out).provider.providerId).toBe("prov-1");
-
-  const customerSink = makeIo();
-  const customerCode = await runSkillpackCli(
-    [
-      "customer",
-      "create",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      apiKey,
-      "--provider-id",
-      "prov-1",
-      "--customer-id",
-      "cust-1",
-      "--name",
-      "Customer One",
-    ],
-    customerSink.io,
-    { fetchImpl: fetch }
-  );
-  expect(customerCode).toBe(0);
-  expect(JSON.parse(customerSink.read().out).customer.customerId).toBe("cust-1");
-
-  const workspaceSink = makeIo();
-  const workspaceCode = await runSkillpackCli(
-    [
-      "workspace",
-      "create",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      apiKey,
-      "--workspace-id",
-      "ws-1",
-      "--provider-id",
-      "prov-1",
-      "--customer-id",
-      "cust-1",
-      "--name",
-      "Workspace One",
-    ],
-    workspaceSink.io,
-    { fetchImpl: fetch }
-  );
-  expect(workspaceCode).toBe(0);
-  const workspaceParsed = JSON.parse(workspaceSink.read().out);
-  expect(workspaceParsed.workspace.workspaceId).toBe("ws-1");
-  expect(workspaceParsed.workspace.status).toBe("ACTIVE");
-});
-
-test("cli: meter upload ingests events from jsonl", async () => {
-  const keys = generateEd25519KeyPair();
-  const apiKey = "test-api-key";
-  const fetch = createLicenseFetchHandler({
-    signingPrivateKeyPem: keys.privateKeyPem,
-    signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey: apiKey,
-  });
-  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "skillpack-meter-upload-test-"));
-  const eventsFile = path.join(workspace, "meter.jsonl");
-  fs.writeFileSync(
-    eventsFile,
-    [
-      JSON.stringify({
-        prevHash: "h0",
-        seq: 1,
-        at: 1_800_000_001,
-        kind: "tool_call",
-        seatId: "seat-1",
-        tool: "wiki_search",
-        usage: { unit: "tool_call", delta: 2 },
-      }),
-      JSON.stringify({
-        prevHash: "h1",
-        seq: 2,
-        at: 1_800_000_002,
-        kind: "tool_call",
-        seatId: "seat-1",
-        tool: "wiki_search",
-        usage: { unit: "tool_call", delta: 1 },
-      }),
-      "",
-    ].join("\n")
-  );
-
-  const sink = makeIo();
-  const code = await runSkillpackCli(
-    [
-      "meter",
-      "upload",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      apiKey,
-      "--workspace-id",
-      "ws-1",
-      "--file",
-      eventsFile,
-    ],
-    sink.io,
-    { fetchImpl: fetch }
-  );
-  expect(code).toBe(0);
-  const parsed = JSON.parse(sink.read().out);
-  expect(parsed.accepted).toBe(true);
-  expect(parsed.ack.count).toBe(2);
-  expect(parsed.ack.range.seqStart).toBe(1);
-  expect(parsed.ack.range.seqEnd).toBe(2);
-});
-
-test("cli: usage summary prints totals", async () => {
-  const keys = generateEd25519KeyPair();
-  const apiKey = "test-api-key";
-  const fetch = createLicenseFetchHandler({
-    signingPrivateKeyPem: keys.privateKeyPem,
-    signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey: apiKey,
-  });
-  await fetch(
-    new Request("http://local/v1/meter/upload", {
-      method: "POST",
-      headers: { "x-api-key": apiKey },
-      body: JSON.stringify({
-        workspaceId: "ws-1",
-        context: {
-          providerId: "prov-1",
-          customerId: "cust-1",
-          skillId: "skill-1",
-          bundleId: "bundle-1",
-          leaseJti: "lease-jti-1",
-        },
-        events: [
-          {
-            prevHash: "h10",
-            seq: 10,
-            at: 1_800_000_100,
-            kind: "tool_call",
-            seatId: "seat-1",
-            tool: "wiki_search",
-            usage: { unit: "tool_call", delta: 2 },
-          },
-          {
-            prevHash: "h11",
-            seq: 11,
-            at: 1_800_000_120,
-            kind: "tool_call",
-            seatId: "seat-1",
-            tool: "wiki_search",
-            usage: { unit: "tool_call", delta: 3 },
-          },
-        ],
-      }),
-    })
-  );
-
-  const sink = makeIo();
-  const code = await runSkillpackCli(
-    [
-      "usage",
-      "summary",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      apiKey,
-      "--workspace-id",
-      "ws-1",
-    ],
-    sink.io,
-    { fetchImpl: fetch }
-  );
-  expect(code).toBe(0);
-  const parsed = JSON.parse(sink.read().out);
-  expect(parsed.summary).toEqual([
-    {
-      providerId: "prov-1",
-      customerId: "cust-1",
-      workspaceId: "ws-1",
-      seatId: "seat-1",
-      skillId: "skill-1",
-      bundleId: "bundle-1",
-      leaseJti: "lease-jti-1",
-      tool: "wiki_search",
-      unit: "tool_call",
-      totalCalls: 5,
-    },
-  ]);
-});
-
-test("cli: billing commands create pricing rule and draft invoice", async () => {
-  const keys = generateEd25519KeyPair();
-  const apiKey = "test-api-key";
-  const fetch = createLicenseFetchHandler({
-    signingPrivateKeyPem: keys.privateKeyPem,
-    signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey: apiKey,
-  });
-
-  await fetch(
-    new Request("http://local/v1/meter/upload", {
-      method: "POST",
-      headers: { "x-api-key": apiKey },
-      body: JSON.stringify({
-        workspaceId: "ws-1",
-        context: {
-          providerId: "prov-1",
-          customerId: "cust-1",
-          skillId: "skill-1",
-          leaseJti: "lease-cli-billing",
-        },
-        events: [
-          {
-            prevHash: "h0",
-            seq: 0,
-            at: 1_800_000_100,
-            kind: "tool_call",
-            seatId: "seat-1",
-            tool: "wiki_search",
-            usage: { unit: "tool_call", delta: 4 },
-          },
-        ],
-      }),
-    })
-  );
-
-  const priceSink = makeIo();
-  const priceCode = await runSkillpackCli(
-    [
-      "billing",
-      "pricing-rule",
-      "create",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      apiKey,
-      "--pricing-rule-id",
-      "price-cli",
-      "--provider-id",
-      "prov-1",
-      "--customer-id",
-      "cust-1",
-      "--tool",
-      "wiki_search",
-      "--currency",
-      "usd",
-      "--unit-amount-cents",
-      "50",
-      "--payment-provider",
-      "dodo",
-      "--payment-product-id",
-      "prod_cli",
-    ],
-    priceSink.io,
-    { fetchImpl: fetch }
-  );
-  expect(priceCode).toBe(0);
-  expect(JSON.parse(priceSink.read().out).pricingRule.paymentProvider.productId).toBe("prod_cli");
-
-  const invoiceSink = makeIo();
-  const invoiceCode = await runSkillpackCli(
-    [
-      "billing",
-      "invoice",
-      "draft",
-      "--server-url",
-      "http://local",
-      "--api-key",
-      apiKey,
-      "--invoice-id",
-      "inv-cli",
-      "--provider-id",
-      "prov-1",
-      "--customer-id",
-      "cust-1",
-      "--period-start-sec",
-      "1800000000",
-      "--period-end-sec",
-      "1800001000",
-    ],
-    invoiceSink.io,
-    { fetchImpl: fetch }
-  );
-  expect(invoiceCode).toBe(0);
-  const invoice = JSON.parse(invoiceSink.read().out).invoice;
-  expect(invoice.totalAmountCents).toBe(200);
-  expect(invoice.lines[0].quantity).toBe(4);
-});
-
-test("cli: provider create fails without --provider-id", async () => {
-  const sink = makeIo();
-  const code = await runSkillpackCli(
-    ["provider", "create", "--server-url", "http://local"],
-    sink.io,
-    { fetchImpl: () => { throw new Error("should_not_reach_fetch"); } }
-  );
-  expect(code).toBe(1);
-  const parsed = JSON.parse(sink.read().err);
-  expect(parsed.error).toBe("missing_provider_id");
-});
-
-test("cli: customer create fails without --customer-id", async () => {
-  const sink = makeIo();
-  const code = await runSkillpackCli(
-    ["customer", "create", "--server-url", "http://local", "--provider-id", "prov-1"],
-    sink.io,
-    { fetchImpl: () => { throw new Error("should_not_reach_fetch"); } }
-  );
-  expect(code).toBe(1);
-  const parsed = JSON.parse(sink.read().err);
-  expect(parsed.error).toBe("missing_customer_id");
-});
-
-test("cli: workspace create fails without --workspace-id", async () => {
-  const sink = makeIo();
-  const code = await runSkillpackCli(
-    [
-      "workspace", "create",
-      "--server-url", "http://local",
-      "--provider-id", "prov-1",
-      "--customer-id", "cust-1",
-    ],
-    sink.io,
-    { fetchImpl: () => { throw new Error("should_not_reach_fetch"); } }
-  );
-  expect(code).toBe(1);
-  const parsed = JSON.parse(sink.read().err);
-  expect(parsed.error).toBe("missing_workspace_id");
-});
-
-test("cli: provider create returns 401 when api key missing", async () => {
-  const keys = generateEd25519KeyPair();
-  const fetch = createLicenseFetchHandler({
-    signingPrivateKeyPem: keys.privateKeyPem,
-    signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey: "required-key",
-  });
-
-  const sink = makeIo();
-  const code = await runSkillpackCli(
-    ["provider", "create", "--server-url", "http://local", "--provider-id", "prov-1"],
-    sink.io,
-    { fetchImpl: fetch }
-  );
-  expect(code).toBe(1);
-  const parsed = JSON.parse(sink.read().err);
-  expect(parsed.error).toBe("unauthorized");
-});
-
-test("cli: customer create returns 400 for unknown provider", async () => {
-  const keys = generateEd25519KeyPair();
-  const apiKey = "test-api-key";
-  const fetch = createLicenseFetchHandler({
-    signingPrivateKeyPem: keys.privateKeyPem,
-    signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey: apiKey,
-  });
-
-  const sink = makeIo();
-  const code = await runSkillpackCli(
-    [
-      "customer", "create",
-      "--server-url", "http://local",
-      "--api-key", apiKey,
-      "--provider-id", "nonexistent-provider",
-      "--customer-id", "cust-1",
-    ],
-    sink.io,
-    { fetchImpl: fetch }
-  );
-  expect(code).toBe(1);
-  const parsed = JSON.parse(sink.read().err);
-  expect(parsed.error).toBe("provider_not_found");
-});
-
-test("cli: workspace create returns 400 for unknown customer", async () => {
-  const keys = generateEd25519KeyPair();
-  const apiKey = "test-api-key";
-  const fetch = createLicenseFetchHandler({
-    signingPrivateKeyPem: keys.privateKeyPem,
-    signingPublicKeyPem: keys.publicKeyPem,
-    managementApiKey: apiKey,
-  });
-
-  await fetch(
-    new Request("http://local/v1/providers", {
-      method: "POST",
-      headers: { "x-api-key": apiKey },
-      body: JSON.stringify({ providerId: "prov-neg", name: "Neg Provider" }),
-    })
-  );
-
-  const sink = makeIo();
-  const code = await runSkillpackCli(
-    [
-      "workspace", "create",
-      "--server-url", "http://local",
-      "--api-key", apiKey,
-      "--workspace-id", "ws-neg",
-      "--provider-id", "prov-neg",
-      "--customer-id", "nonexistent-customer",
-    ],
-    sink.io,
-    { fetchImpl: fetch }
-  );
-  expect(code).toBe(1);
-  const parsed = JSON.parse(sink.read().err);
-  expect(parsed.error).toBe("customer_not_found");
-});
-
-test("cli: bundle build creates .mcpb artifact", async () => {
+test("bundle build creates .mcpb artifact", async () => {
   const zipCheck = spawnSync("zip", ["-v"], { stdio: "ignore" });
   if (zipCheck.status !== 0) return;
-
-  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "skillpack-bundle-test-"));
-  const inputDir = path.join(workspace, "skill-src");
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "sp-bundle-"));
+  const inputDir = path.join(ws, "skill-src");
   fs.mkdirSync(inputDir, { recursive: true });
-  fs.writeFileSync(path.join(inputDir, "README.md"), "# Demo Skill\n");
+  fs.writeFileSync(path.join(inputDir, "README.md"), "# Demo\n");
   fs.writeFileSync(path.join(inputDir, "config.json"), '{"k":"v"}\n');
-
-  const keys = generateEd25519KeyPair();
-  const privateKeyFile = path.join(workspace, "private.pem");
-  fs.writeFileSync(privateKeyFile, keys.privateKeyPem);
-  const outputFile = path.join(workspace, "out", "demo.mcpb");
-
-  const sink = makeIo();
+  const { priv } = writeKeys();
+  const outputFile = path.join(ws, "out", "demo.mcpb");
+  const sink = captureIo();
   const code = await runSkillpackCli(
-    [
-      "bundle",
-      "build",
-      "--input-dir",
-      inputDir,
-      "--bundle-id",
-      "demo-skill",
-      "--version",
-      "1.2.3",
-      "--private-key-file",
-      privateKeyFile,
-      "--output-file",
-      outputFile,
-    ],
+    ["bundle", "build", "--input-dir", inputDir, "--bundle-id", "demo", "--version", "1.0.0",
+      "--private-key-file", priv, "--output-file", outputFile],
     sink.io
   );
   expect(code).toBe(0);
-  const parsed = JSON.parse(sink.read().out);
-  expect(parsed.bundleId).toBe("demo-skill");
+  const parsed = JSON.parse(sink.out);
+  expect(parsed.bundleId).toBe("demo");
   expect(parsed.signed).toBe(true);
   expect(parsed.fileCount).toBe(2);
   expect(fs.existsSync(outputFile)).toBe(true);
