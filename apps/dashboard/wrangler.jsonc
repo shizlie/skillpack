@@ -6,5 +6,8 @@
   // Public vars and secrets are resolved from
   // deploy/hosted-control-plane.manifest.json so the API/dashboard contract
   // lives in one place.
-  "vars": {}
+  "vars": {},
+  "rules": [
+    { "type": "Text", "globs": ["**/*.css"] }
+  ]
 }
