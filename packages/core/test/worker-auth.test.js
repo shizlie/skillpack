@@ -8,6 +8,7 @@ import {
   isValidSharedManagementKey,
   createManagementAuthOptions,
   addUpstreamAuthHeaders,
+  getClerkAuthorizedParties,
 } from "../src/worker-auth.js";
 
 // ---------------------------------------------------------------------------
@@ -307,11 +308,23 @@ describe("worker-auth.addUpstreamAuthHeaders", () => {
     expect(headers.get("x-api-key")).toBe("fallback-key");
   });
 
-  test("hybrid mode silently skips x-api-key when no key and no authorization", () => {
+  test("hybrid mode throws dashboard_missing_env_SKILLPACK_API_KEY when no key and no authorization", () => {
     const headers = new Headers();
     // SKILLPACK_API_KEY absent in hybrid — getOptionalEnvString returns null → throws
     expect(() =>
       addUpstreamAuthHeaders(headers, makeRequest(null), { SKILLPACK_API_AUTH_MODE: "hybrid" })
     ).toThrow("dashboard_missing_env_SKILLPACK_API_KEY");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getClerkAuthorizedParties
+// ---------------------------------------------------------------------------
+describe("worker-auth.getClerkAuthorizedParties", () => {
+  test("returns [origin] when SKILLPACK_DASHBOARD_ORIGIN is set", () => {
+    expect(getClerkAuthorizedParties({ SKILLPACK_DASHBOARD_ORIGIN: "https://example.com" })).toEqual(["https://example.com"]);
+  });
+  test("returns undefined when SKILLPACK_DASHBOARD_ORIGIN is absent", () => {
+    expect(getClerkAuthorizedParties({})).toBeUndefined();
   });
 });
